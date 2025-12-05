@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ro">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Geolocație</title>
+</head>
+
+<body>
+    <h1>Geolocație</h1>
+    <button id="getLocationBtn">Scrie-ți locația</button>
+    <p id="status"></p>
+    <p id="coords"></p>
+
+    <script>
+        const btn = document.getElementById('getLocationBtn');
+        const status = document.getElementById('status');
+        const coords = document.getElementById('coords');
+
+        btn.addEventListener('click', () => {
+            if ('geolocation' in navigator) {
+                status.textContent = 'Se cere permisiunea...';
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude, accuracy } = position.coords;
+                        status.textContent = 'Geolocația a fost obținută.';
+                        coords.textContent = `Latitudine: ${latitude}, Longitudine: ${longitude}, Acuratețe: ${accuracy} `;
+                    },
+                    (err) => {
+                        switch (err.code) {
+                            case err.PERMISSION_DENIED:
+                                status.textContent = 'Permisiunea a fost refuzată de utilizator.';
+                                break;
+                            case err.POSITION_UNAVAILABLE:
+                                status.textContent = 'Poziția nu este disponibilă.';
+                                break;
+                            case err.TIMEOUT:
+                                status.textContent = 'Cererea a expirat.';
+                                break;
+                            default:
+                                status.textContent = 'Eroare necunoscută la obținerea geolocației.';
+                        }
+                        coords.textContent = '';
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                status.textContent = 'Geolocația nu este suportată de acest browser.';
+            }
+        });
+    </script>
+</body>
+
+</html>
