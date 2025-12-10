@@ -52,8 +52,22 @@
   }
 
   @media (max-width: 500px) {
-    button { font-size: 16px; padding: 10px 14px; }
-    #statsPanel { font-size: 20px; padding: 12px 20px; min-width: 180px; }
+    #controls {
+      flex-direction: row !important;
+      gap: 12px;
+      padding: 14px;
+    }
+
+    button {
+      font-size: 22px !important;
+      padding: 18px 24px !important;
+    }
+
+    #statsPanel {
+      font-size: 20px;
+      padding: 12px 20px;
+      min-width: 180px;
+    }
   }
 
   .leaflet-control-container{ display: none !important; }
@@ -103,12 +117,10 @@ async function enableWakeLock() {
     }
 }
 
-// first interaction
 document.addEventListener("click", () => {
     enableWakeLock();
 }, { once:true });
 
-// retry every time tab is visible again
 document.addEventListener("visibilitychange", () => {
     if (!document.hidden && wakeLock === null) {
         enableWakeLock();
