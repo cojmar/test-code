@@ -55,6 +55,10 @@ button:hover { background: #444; }
   button { font-size: 16px; padding: 10px 14px; }
   #statsPanel { font-size: 20px; padding: 12px 20px; min-width: 180px; }
 }
+
+/* Hide Leaflet logo and default controls */
+.leaflet-control-container { display: none !important; }
+.leaflet-bottom.leaflet-left { display: none !important; }
 </style>
 </head>
 
@@ -95,18 +99,16 @@ async function startAudioAndWakeLock() {
                 startAudioAndWakeLock();
             });
         } else {
-            console.warn('Wake Lock API not supported on this browser.');
+            console.warn('Wake Lock API not supported.');
         }
     } catch(err) { console.error('Could not acquire Wake Lock:', err); }
 }
-
-// Must be triggered by user interaction
 document.addEventListener('click', startAudioAndWakeLock);
 document.addEventListener('touchstart', startAudioAndWakeLock);
 
 // ---------------- MAP ----------------
 const mZoom = 18;
-const map = L.map('map').setView([0,0], mZoom);
+const map = L.map('map',{ zoomControl:false }).setView([0,0], mZoom);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:mZoom}).addTo(map);
 
 // ---------------- ROUTE ----------------
@@ -115,6 +117,14 @@ let lastPoint = null;
 const THRESHOLD = 0.00001;
 const statsDiv = document.getElementById("statsPanel");
 let polyline = L.polyline([], { color: "red" }).addTo(map);
+
+// Custom red marker
+let markerIcon = L.icon({
+    iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iOCIgZmlsbD0icmVkIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIiLz48L3N2Zz4=',
+    iconSize: [24,24],
+    iconAnchor: [12,12]
+});
+let marker = null;
 
 // ---------------- STORAGE ----------------
 function saveRouteToStorage() {
@@ -130,7 +140,11 @@ function loadRouteFromStorage() {
                 route = arr.map(p=>({lat:p.lat, lon:p.lon, time:p.time||Date.now()}));
                 lastPoint = route.length ? route[route.length-1] : null;
                 polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
-                if(route.length) map.setView([lastPoint.lat,lastPoint.lon],17);
+                if(route.length){
+                    if(!marker) marker = L.marker([lastPoint.lat,lastPoint.lon], {icon:markerIcon}).addTo(map);
+                    else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
+                    map.setView([lastPoint.lat,lastPoint.lon],17);
+                }
                 updateStats();
             }
         } catch(err){console.error("Failed to load route from storage:",err);}
@@ -140,6 +154,7 @@ function loadRouteFromStorage() {
 function clearRouteStorage(){
     localStorage.removeItem("routeData");
     route=[]; lastPoint=null; polyline.setLatLngs([]);
+    if(marker){ map.removeLayer(marker); marker=null; }
     updateStats();
 }
 
@@ -172,6 +187,9 @@ map.locate({ setView:true, maxZoom:mZoom, watch:true, enableHighAccuracy:true })
            route.push(point);
            lastPoint=point;
            polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
+           // Update or create custom marker
+           if(!marker) marker=L.marker([lat,lng],{icon:markerIcon}).addTo(map);
+           else marker.setLatLng([lat,lng]);
            updateStats();
            saveRouteToStorage();
        }
@@ -200,7 +218,11 @@ document.getElementById("fileInput").onchange=async e=>{
         route=arr.map(p=>({lat:p.lat, lon:p.lon, time:p.time||Date.now()}));
         lastPoint=route.length?route[route.length-1]:null;
         polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
-        if(route.length) map.setView([lastPoint.lat,lastPoint.lon],17);
+        if(route.length){
+            if(!marker) marker=L.marker([lastPoint.lat,lastPoint.lon],{icon:markerIcon}).addTo(map);
+            else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
+            map.setView([lastPoint.lat,lastPoint.lon],17);
+        }
         updateStats();
         saveRouteToStorage();
     } catch(err){alert("Error loading route"); console.error(err);}
