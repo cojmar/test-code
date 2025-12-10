@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8" />
-<title>GPS Route Tracker</title>
+<title>GPS Route Tracker Desktop & Mobile</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
@@ -10,6 +10,7 @@
   html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
   #map { width: 100%; height: 100%; }
 
+  /* Control buttons */
   #controls {
     position: fixed;
     top: 10px;
@@ -37,6 +38,7 @@
     background: #444;
   }
 
+  /* Large stats panel */
   #statsPanel {
     position: fixed;
     bottom: 10px;
@@ -82,7 +84,7 @@
 
 <script>
 // ---------------- MAP ----------------
-const map = L.map('map').setView([0, 0], 15); // normal zoom
+const map = L.map('map').setView([0, 0], 15);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19
 }).addTo(map);
@@ -120,33 +122,59 @@ function updateStats() {
     statsDiv.textContent = `Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`;
 }
 
-// ---------------- GPS ----------------
-navigator.geolocation.watchPosition(
-    pos => {
-        const { latitude, longitude } = pos.coords;
+// ---------------- GEOLOCATION ----------------
+function startTracking() {
+    if (!navigator.geolocation) {
+        alert("Geolocation not supported in this browser.");
+        return;
+    }
 
-        if (!lastPoint || Math.abs(latitude - lastPoint.lat) > THRESHOLD || Math.abs(longitude - lastPoint.lon) > THRESHOLD) {
-            const timestamp = Date.now();
-            const point = { lat: latitude, lon: longitude, time: timestamp };
+    navigator.geolocation.watchPosition(
+        pos => {
+            const { latitude, longitude } = pos.coords;
 
-            route.push(point);
-            lastPoint = point;
+            if (!lastPoint || Math.abs(latitude - lastPoint.lat) > THRESHOLD || Math.abs(longitude - lastPoint.lon) > THRESHOLD) {
+                const timestamp = Date.now();
+                const point = { lat: latitude, lon: longitude, time: timestamp };
 
-            polyline.setLatLngs(route.map(p => [p.lat, p.lon]));
+                route.push(point);
+                lastPoint = point;
 
-            if (!marker) {
-                marker = L.marker([latitude, longitude]).addTo(map);
-                map.setView([latitude, longitude], 17); // start zoom when first GPS fix
-            } else {
-                marker.setLatLng([latitude, longitude]);
+                polyline.setLatLngs(route.map(p => [p.lat, p.lon]));
+
+                if (!marker) {
+                    marker = L.marker([latitude, longitude]).addTo(map);
+                    map.setView([latitude, longitude], 17); // zoom on first fix
+                } else {
+                    marker.setLatLng([latitude, longitude]);
+                }
+
+                updateStats();
             }
-
-            updateStats();
+        },
+        err => console.warn("Geolocation error, falling back to IP:", err),
+        {
+            maximumAge: 60000,    // allow cached positions (IP fallback)
+            timeout: 10000,
+            enableHighAccuracy: false // allow coarse location if no GPS
         }
-    },
-    err => console.error("GPS Error:", err),
-    { enableHighAccuracy: true }
-);
+    );
+}
+
+// Fallback for desktop without GPS: try locate method
+map.locate({setView: true, maxZoom: 15, watch: false})
+   .on('locationfound', e => {
+       if (!lastPoint) {
+           const point = { lat: e.latitude, lon: e.longitude, time: Date.now() };
+           route.push(point);
+           lastPoint = point;
+           marker = L.marker([e.latitude, e.longitude]).addTo(map);
+           polyline.setLatLngs([[e.latitude, e.longitude]]);
+           updateStats();
+       }
+   });
+
+startTracking();
 
 // ---------------- EXPORT ----------------
 document.getElementById("exportBtn").onclick = () => {
