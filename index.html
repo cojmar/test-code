@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8" />
-<title>GPS Route Tracker</title>
+<title>GPS Route Tracker with Change Detection</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
@@ -49,32 +49,42 @@
 
 <script>
 // ---------------- MAP + GPS ----------------
-
-// Correct OSM zoom limits
 const map = L.map('map').setView([0, 0], 19);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19    // OSM max zoom -> prevents 400 errors
+    maxZoom: 19
 }).addTo(map);
 
 let route = [];
-let marker = null;
+let marker = L.marker([0,0]); // placeholder
 let polyline = L.polyline([], { color: "red" }).addTo(map);
 
-// GPS tracking
+let lastPoint = null;
+const THRESHOLD = 0.00001; // ~1 meter
+
 navigator.geolocation.watchPosition(
     pos => {
         const { latitude, longitude } = pos.coords;
-        const point = [latitude, longitude];
 
-        route.push(point);
-        polyline.setLatLngs(route);
+        // Store new point only if moved enough
+        if (!lastPoint ||
+            Math.abs(latitude - lastPoint.lat) > THRESHOLD ||
+            Math.abs(longitude - lastPoint.lon) > THRESHOLD) {
 
-        if (!marker) {
-            marker = L.marker(point).addTo(map);
-            map.setView(point, 19);
-        } else {
-            marker.setLatLng(point);
+            const timestamp = Date.now();
+            const point = { lat: latitude, lon: longitude, time: timestamp };
+
+            route.push(point);
+            lastPoint = point;
+
+            polyline.setLatLngs(route.map(p => [p.lat, p.lon]));
+
+            if (!marker._map) {
+                marker = L.marker([point.lat, point.lon]).addTo(map);
+                map.setView([point.lat, point.lon], 19);
+            } else {
+                marker.setLatLng([point.lat, point.lon]);
+            }
         }
     },
     err => console.error("GPS Error:", err),
@@ -83,8 +93,8 @@ navigator.geolocation.watchPosition(
 
 // ---------------- EXPORT ----------------
 document.getElementById("exportBtn").onclick = () => {
-    const data = JSON.stringify(route);
-    const blob = new Blob([data], { type: "text/plain" });
+    const data = JSON.stringify(route, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
 
     const a = document.createElement("a");
@@ -114,15 +124,23 @@ document.getElementById("fileInput").onchange = async (e) => {
             return;
         }
 
-        route = arr;
-        polyline.setLatLngs(route);
+        // Ensure each point has lat, lon, time
+        route = arr.map(p => ({
+            lat: p.lat,
+            lon: p.lon,
+            time: p.time || Date.now()
+        }));
+
+        lastPoint = route.length > 0 ? route[route.length - 1] : null;
+
+        polyline.setLatLngs(route.map(p => [p.lat, p.lon]));
 
         if (route.length > 0) {
             const last = route[route.length - 1];
 
-            if (!marker) marker = L.marker(last).addTo(map);
-            marker.setLatLng(last);
-            map.setView(last, 19);
+            if (!marker._map) marker = L.marker([last.lat, last.lon]).addTo(map);
+            marker.setLatLng([last.lat, last.lon]);
+            map.setView([last.lat, last.lon], 19);
         }
 
     } catch (err) {
