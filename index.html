@@ -86,7 +86,7 @@ const bgAudio = document.getElementById('bgAudio');
 let audioStarted = false;
 let wakeLock = null;
 
-async function startAudioAndWakeLock() {
+async function requestWakeLock() {
     if (!audioStarted) {
         bgAudio.play().catch(err => console.warn("Audio autoplay blocked:", err));
         audioStarted = true;
@@ -94,12 +94,25 @@ async function startAudioAndWakeLock() {
     try {
         if ('wakeLock' in navigator) {
             wakeLock = await navigator.wakeLock.request('screen');
-            wakeLock.addEventListener('release', () => startAudioAndWakeLock());
+            console.log('Wake Lock acquired');
+
+            wakeLock.addEventListener('release', () => {
+                console.log('Wake Lock released, re-acquiring...');
+                requestWakeLock();
+            });
+
+            document.addEventListener('visibilitychange', () => {
+                if (wakeLock === null && document.visibilityState === 'visible') {
+                    requestWakeLock();
+                }
+            });
+        } else {
+            console.warn('Wake Lock API not supported.');
         }
-    } catch(err) { console.error('Could not acquire Wake Lock:', err); }
+    } catch(err) { console.error('Wake Lock request failed:', err); }
 }
-document.addEventListener('click', startAudioAndWakeLock);
-document.addEventListener('touchstart', startAudioAndWakeLock);
+document.addEventListener('click', requestWakeLock, { once: true });
+document.addEventListener('touchstart', requestWakeLock, { once: true });
 
 // ---------------- MAP ----------------
 const mZoom = 18;
