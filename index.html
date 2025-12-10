@@ -4,64 +4,131 @@
 <meta charset="UTF-8" />
 <title>GPS Route Tracker</title>
 
-<!-- Leaflet CSS inline via CDN link (allowed because it's still 1 file on our side) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
 <style>
   html, body { margin: 0; padding: 0; height: 100%; }
   #map { width: 100%; height: 100%; }
+
+  #controls {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 9999;
+    display: flex;
+    gap: 10px;
+  }
+
+  button {
+    padding: 7px 12px;
+    font-size: 14px;
+    border: none;
+    background: #222;
+    color: white;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  button:hover {
+    background: #444;
+  }
 </style>
 </head>
 
 <body>
+
+<div id="controls">
+    <button id="exportBtn">Export</button>
+    <button id="importBtn">Import</button>
+    <input type="file" id="fileInput" style="display:none" />
+</div>
+
 <div id="map"></div>
 
-<!-- Leaflet JS from CDN (still 1 local file) -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-// --- APP START ---
-
-const map = L.map('map').setView([0, 0], 15);
+// ---------------- MAP + GPS ----------------
+const map = L.map('map').setView([0, 0], 20);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19
+    maxZoom: 22
 }).addTo(map);
 
 let route = [];
 let marker = null;
 let polyline = L.polyline([], { color: "red" }).addTo(map);
 
-if (!navigator.geolocation) {
-    alert("GPS not supported");
-}
-
 navigator.geolocation.watchPosition(
     pos => {
         const { latitude, longitude } = pos.coords;
-
-        // Save point to route
         const point = [latitude, longitude];
+
         route.push(point);
         polyline.setLatLngs(route);
 
-        // Update or place marker
         if (!marker) {
             marker = L.marker(point).addTo(map);
-            map.setView(point, 17);
+            map.setView(point, 20);
         } else {
             marker.setLatLng(point);
         }
     },
-    err => console.error(err),
-    {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 5000
-    }
+    err => console.error("GPS Error:", err),
+    { enableHighAccuracy: true }
 );
 
-// --- APP END ---
+// ---------------- EXPORT ----------------
+document.getElementById("exportBtn").onclick = () => {
+    const data = JSON.stringify(route);
+    const blob = new Blob([data], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "route.txt";
+    a.click();
+
+    URL.revokeObjectURL(url);
+};
+
+// ---------------- IMPORT ----------------
+document.getElementById("importBtn").onclick = () => {
+    document.getElementById("fileInput").click();
+};
+
+document.getElementById("fileInput").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const text = await file.text();
+
+    try {
+        const arr = JSON.parse(text);
+
+        if (!Array.isArray(arr)) {
+            alert("Invalid file format");
+            return;
+        }
+
+        route = arr;
+        polyline.setLatLngs(route);
+
+        if (route.length > 0) {
+            const last = route[route.length - 1];
+
+            if (!marker) {
+                marker = L.marker(last).addTo(map);
+            }
+            marker.setLatLng(last);
+            map.setView(last, 20);
+        }
+
+    } catch (err) {
+        alert("Error reading route file");
+        console.error(err);
+    }
+};
 </script>
 
 </body>
