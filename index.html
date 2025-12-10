@@ -83,7 +83,6 @@ label { color:white; font-size:22px; display:flex; align-items:center; font-weig
 <div id="statsPanel">Distance: 0 m | Time: 0 s</div>
 <div id="map"></div>
 
-<!-- Leaflet + pako (gzip) -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
@@ -120,7 +119,7 @@ document.addEventListener("visibilitychange",()=>{ if(!document.hidden) enableWa
 function distanceMeters(p1,p2){ const R=6371000; const dLat=(p2.lat-p1.lat)*Math.PI/180; const dLon=(p2.lon-p1.lon)*Math.PI/180; const lat1=p1.lat*Math.PI/180; const lat2=p2.lat*Math.PI/180; const a=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); return R*c; }
 function updateStats(){ if(route.length<2){ statsDiv.textContent="Distance: 0 m | Time: 0 s"; return } let dist=0; for(let i=1;i<route.length;i++) dist+=distanceMeters(route[i-1],route[i]); const elapsed=Math.floor((route[route.length-1].time-route[0].time)/1000); statsDiv.textContent=`Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`; }
 
-function addPoint(lat,lon){ const timestamp=Date.now(); const point={lat:+lat.toFixed(6), lon:+lon.toFixed(6), time:timestamp}; route.push(point); lastPoint=point; localStorage.setItem("gpsRoute", JSON.stringify(route)); const pts=route.map(p=>[p.lat,p.lon]); polylineOutline.setLatLngs(pts); polyline.setLatLngs(pts); if(!marker) marker=L.marker([lat,lon]).addTo(map); else marker.setLatLng([lat,lon]); if(followEnabled()) map.setView([lat,lon]); updateStats(); }
+function addPoint(lat,lon){ const timestamp = Date.now(); const point={lat:+lat.toFixed(6), lon:+lon.toFixed(6), time:timestamp}; route.push(point); lastPoint=point; localStorage.setItem("gpsRoute", JSON.stringify(route)); const pts=route.map(p=>[p.lat,p.lon]); polylineOutline.setLatLngs(pts); polyline.setLatLngs(pts); if(!marker) marker=L.marker([lat,lon]).addTo(map); else marker.setLatLng([lat,lon]); if(followEnabled()) map.setView([lat,lon]); updateStats(); }
 function handlePosition(pos){ const {latitude,longitude}=pos.coords; if(!lastPoint||Math.abs(latitude-lastPoint.lat)>THRESHOLD||Math.abs(longitude-lastPoint.lon)>THRESHOLD) addPoint(latitude,longitude); }
 function fallbackLocate(){ map.locate({setView:true,maxZoom:15,watch:false}).on('locationfound',e=>{ if(!lastPoint)addPoint(e.latitude,e.longitude); }); }
 function startTracking(){ if(!navigator.geolocation){ fallbackLocate(); return; } navigator.geolocation.getCurrentPosition(pos=>handlePosition(pos),err=>fallbackLocate(),{enableHighAccuracy:true,timeout:10000}); navigator.geolocation.watchPosition(pos=>handlePosition(pos),err=>fallbackLocate(),{maximumAge:0,enableHighAccuracy:true}); }
@@ -132,27 +131,37 @@ updateStats();
 startTracking();
 window.addEventListener("load",()=>map.invalidateSize());
 
-/* GZIP EXPORT/IMPORT */
-function encodeRouteGzip(arr){
+/* DELTA + GZIP EXPORT/IMPORT */
+function encodeRouteDeltaGzip(arr){
   if(!arr.length) return "";
-  const data = arr.map(p=>[p.lat,p.lon,p.time]).flat().join(",");
-  const compressed = pako.deflate(data,{level:9});
+  const flat=[];
+  flat.push(arr[0].lat,arr[0].lon,arr[0].time);
+  for(let i=1;i<arr.length;i++){
+    flat.push(arr[i].lat-arr[i-1].lat, arr[i].lon-arr[i-1].lon, arr[i].time-arr[i-1].time);
+  }
+  const compressed = pako.deflate(flat.join(","),{level:9});
   return btoa(String.fromCharCode(...compressed));
 }
 
-function decodeRouteGzip(str){
+function decodeRouteDeltaGzip(str){
   if(!str) return [];
-  const bytes = Uint8Array.from(atob(str), c=>c.charCodeAt(0));
+  const bytes = Uint8Array.from(atob(str),c=>c.charCodeAt(0));
   const decompressed = pako.inflate(bytes,{to:'string'});
   const nums = decompressed.split(",").map(Number);
   const res=[];
-  for(let i=0;i<nums.length;i+=3){ res.push({lat:nums[i], lon:nums[i+1], time:nums[i+2]}); }
+  for(let i=0;i<nums.length;i+=3){
+    if(i===0) res.push({lat:nums[i],lon:nums[i+1],time:nums[i+2]});
+    else{
+      const last=res[res.length-1];
+      res.push({lat:last.lat+nums[i],lon:last.lon+nums[i+1],time:last.time+nums[i+2]});
+    }
+  }
   return res;
 }
 
 // export to URL hash and copy
 document.getElementById("exportBtn").onclick=()=>{
-  const str = encodeRouteGzip(route);
+  const str = encodeRouteDeltaGzip(route);
   const url = window.location.origin + window.location.pathname + "#" + str;
   navigator.clipboard.writeText(url).then(()=>alert("Route URL copied!"));
 };
@@ -181,7 +190,7 @@ document.getElementById("clearBtn").onclick=()=>{ localStorage.removeItem("gpsRo
 // import from URL hash
 if(location.hash.length>1){
   try{
-    const arr = decodeRouteGzip(location.hash.substring(1));
+    const arr = decodeRouteDeltaGzip(location.hash.substring(1));
     if(arr.length){ route=arr; lastPoint=route[route.length-1]; localStorage.setItem("gpsRoute", JSON.stringify(route));
       polylineOutline.setLatLngs(route.map(p=>[p.lat,p.lon]));
       polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
