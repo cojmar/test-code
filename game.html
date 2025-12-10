@@ -5,41 +5,41 @@
 <title>Isometric GPS Tracker</title>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
 <style>
-    html, body { margin:0; padding:0; height:100%; overflow:hidden; }
-    #statsPanel {
-        position: fixed;
-        bottom: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(0,0,0,0.7);
-        color: #fff;
-        font-size: 20px;
-        font-weight: bold;
-        padding: 10px 20px;
-        border-radius: 12px;
-        z-index: 9999;
-        text-align: center;
-        min-width: 180px;
-    }
-    #controls {
-        position: fixed;
-        top: 10px;
-        left: 10px;
-        z-index: 9999;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-    }
-    button {
-        padding: 8px 12px;
-        font-size: 16px;
-        border: none;
-        border-radius: 6px;
-        background: #222;
-        color: white;
-        cursor: pointer;
-    }
-    button:hover { background: #444; }
+html, body { margin:0; padding:0; height:100%; overflow:hidden; }
+#statsPanel {
+    position: fixed;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    padding: 10px 20px;
+    border-radius: 12px;
+    z-index: 9999;
+    text-align: center;
+    min-width: 180px;
+}
+#controls {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+button {
+    padding: 8px 12px;
+    font-size: 16px;
+    border: none;
+    border-radius: 6px;
+    background: #222;
+    color: white;
+    cursor: pointer;
+}
+button:hover { background: #444; }
 </style>
 </head>
 <body>
@@ -56,19 +56,17 @@
 // ------------------- Phaser Setup -------------------
 const TILE_WIDTH = 64;
 const TILE_HEIGHT = 32;
-const MAP_WIDTH = 50;  // tiles
+const MAP_WIDTH = 50;
 const MAP_HEIGHT = 50;
 
 const route = [];
 let lastPoint = null;
-let totalDistance = 0;
 
 const config = {
     type: Phaser.AUTO,
     width: window.innerWidth,
     height: window.innerHeight,
     backgroundColor: '#87ceeb',
-    parent: 'body',
     scene: {
         preload: preload,
         create: create,
@@ -81,84 +79,76 @@ const game = new Phaser.Game(config);
 let graphics, player;
 
 function preload() {
-    this.load.image('tile', 'https://i.imgur.com/TxzC70f.png'); // placeholder diamond tile
-    this.load.image('player', 'https://i.imgur.com/6WQh0Vd.png'); // placeholder player
+    // small embedded diamond tile
+    this.textures.generate('tile', { data: [' 11 ', '1111', ' 11 '], pixelWidth:16, pixelHeight:16 });
+    // small embedded player circle
+    this.textures.generate('player', { data:['111','111','111'], pixelWidth:16, pixelHeight:16 });
 }
 
 function create() {
     graphics = this.add.graphics();
     drawMap(this);
 
-    player = this.add.image(0, 0, 'player');
-    player.setOrigin(0.5, 1);
-    player.setDepth(1000); // on top
+    player = this.add.image(0,0,'player').setOrigin(0.5,1).setDepth(1000);
 
-    // Enable camera follow
-    this.cameras.main.startFollow(player, true, 0.1, 0.1);
+    this.cameras.main.startFollow(player,true,0.1,0.1);
 }
 
-// Draw a simple isometric tile map
-function drawMap(scene) {
-    for (let x = 0; x < MAP_WIDTH; x++) {
-        for (let y = 0; y < MAP_HEIGHT; y++) {
-            const isoX = (x - y) * TILE_WIDTH/2 + scene.scale.width/2;
-            const isoY = (x + y) * TILE_HEIGHT/2;
-            scene.add.image(isoX, isoY, 'tile').setOrigin(0.5, 0.5);
+function drawMap(scene){
+    for(let x=0;x<MAP_WIDTH;x++){
+        for(let y=0;y<MAP_HEIGHT;y++){
+            const isoX = (x-y)*TILE_WIDTH/2 + scene.scale.width/2;
+            const isoY = (x+y)*TILE_HEIGHT/2;
+            scene.add.image(isoX, isoY,'tile').setOrigin(0.5,0.5);
         }
     }
 }
 
-// Convert lat/lon to approximate grid coords
-function latLonToGrid(lat, lon) {
-    // Very basic: just scale lat/lon to tile grid
-    const scale = 1000; // adjust for zoom / map scale
-    const gx = Math.floor((lon*scale) % MAP_WIDTH);
-    const gy = Math.floor((lat*scale) % MAP_HEIGHT);
+function latLonToGrid(lat, lon){
+    const scale = 1000;
+    const gx = Math.floor((lon*scale)%MAP_WIDTH);
+    const gy = Math.floor((lat*scale)%MAP_HEIGHT);
     return { x: gx, y: gy };
 }
 
-// Convert grid to isometric pixel
-function gridToIso(x, y, scene) {
-    const isoX = (x - y) * TILE_WIDTH/2 + scene.scale.width/2;
-    const isoY = (x + y) * TILE_HEIGHT/2;
+function gridToIso(x,y,scene){
+    const isoX = (x-y)*TILE_WIDTH/2 + scene.scale.width/2;
+    const isoY = (x+y)*TILE_HEIGHT/2;
     return { isoX, isoY };
 }
 
-function update() {
-    // Draw route trail
+function update(){
     graphics.clear();
-    graphics.lineStyle(4, 0xff0000, 1);
-    for (let i = 1; i < route.length; i++) {
-        const p1 = gridToIso(route[i-1].gx, route[i-1].gy, this.scene ? this.scene : game.scene.scenes[0]);
-        const p2 = gridToIso(route[i].gx, route[i].gy, this.scene ? this.scene : game.scene.scenes[0]);
-        graphics.strokeLineShape(new Phaser.Geom.Line(p1.isoX, p1.isoY, p2.isoX, p2.isoY));
+    graphics.lineStyle(4,0xff0000,1);
+    for(let i=1;i<route.length;i++){
+        const p1 = gridToIso(route[i-1].gx,route[i-1].gy,game.scene.scenes[0]);
+        const p2 = gridToIso(route[i].gx,route[i].gy,game.scene.scenes[0]);
+        graphics.strokeLineShape(new Phaser.Geom.Line(p1.isoX,p1.isoY,p2.isoX,p2.isoY));
     }
 }
 
-// ------------------- Stats -------------------
+// ---------------- Stats ----------------
 const statsDiv = document.getElementById('statsPanel');
-
-function updateStats() {
-    let dist = 0;
-    for (let i=1;i<route.length;i++) {
+function updateStats(){
+    let dist=0;
+    for(let i=1;i<route.length;i++){
         dist += Math.sqrt(
-            (route[i].lat - route[i-1].lat)**2 +
-            (route[i].lon - route[i-1].lon)**2
-        ) * 111000; // approx meters
+            (route[i].lat-route[i-1].lat)**2 + (route[i].lon-route[i-1].lon)**2
+        )*111000;
     }
-    const elapsed = route.length > 0 ? Math.floor((route[route.length-1].time - route[0].time)/1000) : 0;
+    const elapsed = route.length>0?Math.floor((route[route.length-1].time-route[0].time)/1000):0;
     statsDiv.textContent = `Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`;
 }
 
-// ------------------- Geolocation -------------------
-if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(pos => {
+// ---------------- Geolocation ----------------
+if(navigator.geolocation){
+    navigator.geolocation.watchPosition(pos=>{
         const { latitude, longitude } = pos.coords;
         const timestamp = Date.now();
 
-        if (!lastPoint || Math.abs(latitude - lastPoint.lat) > 0.00001 || Math.abs(longitude - lastPoint.lon) > 0.00001) {
+        if(!lastPoint || Math.abs(latitude-lastPoint.lat)>0.00001 || Math.abs(longitude-lastPoint.lon)>0.00001){
             const grid = latLonToGrid(latitude, longitude);
-            const point = { lat: latitude, lon: longitude, time: timestamp, gx: grid.x, gy: grid.y };
+            const point = {lat:latitude, lon:longitude, time:timestamp, gx:grid.x, gy:grid.y};
             route.push(point);
             lastPoint = point;
 
@@ -167,47 +157,36 @@ if (navigator.geolocation) {
 
             updateStats();
         }
-    }, err => console.warn("Geolocation error:", err), { maximumAge:60000, enableHighAccuracy:false });
-} else {
-    alert("Geolocation not supported");
-}
+    },err=>console.warn("Geolocation error:",err),{maximumAge:60000, enableHighAccuracy:false});
+}else alert("Geolocation not supported");
 
-// ------------------- Export / Import -------------------
-document.getElementById('exportBtn').onclick = () => {
-    const data = JSON.stringify(route, null, 2);
-    const blob = new Blob([data], {type:'application/json'});
+// ---------------- Export / Import ----------------
+document.getElementById('exportBtn').onclick = ()=>{
+    const data = JSON.stringify(route,null,2);
+    const blob = new Blob([data],{type:'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'route.txt';
-    a.click();
+    a.href=url; a.download='route.txt'; a.click();
     URL.revokeObjectURL(url);
 };
-
-document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
-
-document.getElementById('fileInput').onchange = async e => {
+document.getElementById('importBtn').onclick=()=>document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = async e=>{
     const file = e.target.files[0];
-    if (!file) return;
+    if(!file)return;
     const text = await file.text();
-    try {
+    try{
         const arr = JSON.parse(text);
-        if (!Array.isArray(arr)) { alert("Invalid file"); return; }
-        route.length = 0;
-        arr.forEach(p => route.push({
-            lat: p.lat, lon: p.lon, time: p.time || Date.now(),
-            gx: latLonToGrid(p.lat,p.lon).x,
-            gy: latLonToGrid(p.lat,p.lon).y
-        }));
-        if (route.length > 0) {
+        if(!Array.isArray(arr)){ alert("Invalid file"); return; }
+        route.length=0;
+        arr.forEach(p=>route.push({lat:p.lat, lon:p.lon, time:p.time||Date.now(), gx:latLonToGrid(p.lat,p.lon).x, gy:latLonToGrid(p.lat,p.lon).y}));
+        if(route.length>0){
             const last = route[route.length-1];
-            const iso = gridToIso(last.gx, last.gy, game.scene.scenes[0]);
+            const iso = gridToIso(last.gx,last.gy,game.scene.scenes[0]);
             player.setPosition(iso.isoX, iso.isoY);
         }
         updateStats();
-    } catch(err) { alert("Error loading file"); console.error(err); }
+    }catch(err){alert("Error loading file");console.error(err);}
 };
 </script>
-
 </body>
 </html>
