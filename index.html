@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <title>GPS Route Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
@@ -93,7 +94,6 @@ async function startAudioAndWakeLock() {
     try {
         if ('wakeLock' in navigator) {
             wakeLock = await navigator.wakeLock.request('screen');
-            console.log('Wake Lock acquired');
             wakeLock.addEventListener('release', () => startAudioAndWakeLock());
         }
     } catch(err) { console.error('Could not acquire Wake Lock:', err); }
@@ -103,7 +103,7 @@ document.addEventListener('touchstart', startAudioAndWakeLock);
 
 // ---------------- MAP ----------------
 const mZoom = 18;
-const map = L.map('map',{ zoomControl:false }).setView([0,0], mZoom);
+const map = L.map('map', { zoomControl:false, touchZoom:true, scrollWheelZoom:true }).setView([0,0], mZoom);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:mZoom}).addTo(map);
 
 // ---------------- ROUTE ----------------
@@ -112,7 +112,17 @@ let lastPoint = null;
 const THRESHOLD = 0.00001;
 const statsDiv = document.getElementById("statsPanel");
 let polyline = L.polyline([], { color: "red" }).addTo(map);
-let marker = null; // default marker
+let marker = null;
+
+// ---------------- RED MARKER ICON ----------------
+const redIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25,41],
+  iconAnchor: [12,41],
+  popupAnchor: [1,-34],
+  shadowSize: [41,41]
+});
 
 // ---------------- STORAGE ----------------
 function saveRouteToStorage() {
@@ -130,7 +140,7 @@ function loadRouteFromStorage() {
                 polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
                 if(route.length){
                     const last = route[route.length-1];
-                    if(!marker) marker = L.marker([last.lat,last.lon]).addTo(map);
+                    if(!marker) marker = L.marker([last.lat,last.lon], {icon:redIcon}).addTo(map);
                     else marker.setLatLng([last.lat,last.lon]);
                     map.setView([last.lat,last.lon],17);
                 }
@@ -176,7 +186,7 @@ map.locate({ setView:true, maxZoom:mZoom, watch:true, enableHighAccuracy:true })
            route.push(point);
            lastPoint=point;
            polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
-           if(!marker) marker = L.marker([lat,lng]).addTo(map);
+           if(!marker) marker = L.marker([lat,lng], {icon:redIcon}).addTo(map);
            else marker.setLatLng([lat,lng]);
            updateStats();
            saveRouteToStorage();
@@ -207,7 +217,7 @@ document.getElementById("fileInput").onchange=async e=>{
         polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
         if(route.length){
             const last = route[route.length-1];
-            if(!marker) marker = L.marker([last.lat,last.lon]).addTo(map);
+            if(!marker) marker = L.marker([last.lat,last.lon], {icon:redIcon}).addTo(map);
             else marker.setLatLng([last.lat,last.lon]);
             map.setView([last.lat,last.lon],17);
         }
