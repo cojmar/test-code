@@ -17,17 +17,17 @@ html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
   transform: translateX(-50%);
   display: flex;
   flex-direction: row;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
   background: rgba(0,0,0,0.55);
-  padding: 14px;
+  padding: 18px;
   border-radius: 12px;
   z-index: 9999;
 }
 
 button {
-  padding: 20px 30px;
-  font-size: 22px;
+  padding: 26px 36px;
+  font-size: 26px;
   font-weight: bold;
   border: none;
   background: #222;
@@ -36,7 +36,6 @@ button {
   border-radius: 10px;
   white-space: nowrap;
 }
-
 button:hover { background: #444; }
 
 #followBox { width:30px; height:30px; margin-right:8px; }
@@ -59,8 +58,8 @@ label { color:white; font-size:22px; display:flex; align-items:center; font-weig
 }
 
 @media (max-width:500px){
-  button { padding: 26px 36px; font-size:26px; }
-  #controls { gap:16px; padding:18px; }
+  button { padding: 36px 46px; font-size:30px; }
+  #controls { gap:18px; padding:20px; }
   #statsPanel { font-size:20px; padding:12px 20px; }
 }
 
@@ -69,7 +68,6 @@ label { color:white; font-size:22px; display:flex; align-items:center; font-weig
 </head>
 
 <body>
-
 <div id="controls">
   <button id="exportBtn">Export</button>
   <button id="importBtn">Import</button>
@@ -84,11 +82,9 @@ label { color:white; font-size:22px; display:flex; align-items:center; font-weig
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-
 <script>
 const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-const mZoomDefault = isMobile?19:18;
+const mZoomDefault = isMobile ? 19 : 18;
 const savedZoom = Math.min(Number(localStorage.getItem("mapZoom")||mZoomDefault),19);
 const map = L.map('map').setView([0,0], savedZoom);
 map.on("zoomend",()=>{ localStorage.setItem("mapZoom", map.getZoom()); });
@@ -96,92 +92,133 @@ map.on("zoomend",()=>{ localStorage.setItem("mapZoom", map.getZoom()); });
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{ maxZoom:19 }).addTo(map);
 map.on('tileerror',()=>{ map.eachLayer(l=>{ if(l instanceof L.TileLayer) l.redraw(); }) });
 
-let followState = localStorage.getItem("followState");
-if(followState===null) followState="on";
+/* FOLLOW */
+let followState = localStorage.getItem("followState")||"on";
 document.getElementById("followBox").checked = followState==="on";
-document.getElementById("followBox").onchange=()=>{ localStorage.setItem("followState", document.getElementById("followBox").checked?"on":"off"); };
+document.getElementById("followBox").onchange = ()=>localStorage.setItem("followState", document.getElementById("followBox").checked?"on":"off");
 function followEnabled(){ return document.getElementById("followBox").checked; }
 
+/* ROUTE */
 let route = JSON.parse(localStorage.getItem("gpsRoute")||"[]");
-let marker=null;
-let polylineOutline=L.polyline([], {color:"#0066FF", weight:11, opacity:0.9}).addTo(map);
-let polyline=L.polyline([], {color:"#00FF00", weight:6, opacity:1}).addTo(map);
+let marker = null;
+const polylineOutline = L.polyline([],{color:"#0066FF",weight:11,opacity:0.9}).addTo(map);
+const polyline = L.polyline([],{color:"#00FF00",weight:6,opacity:1}).addTo(map);
 let lastPoint = route.length?route[route.length-1]:null;
-const THRESHOLD=0.00001;
-const statsDiv=document.getElementById("statsPanel");
+const THRESHOLD = 0.00001;
+const statsDiv = document.getElementById("statsPanel");
 
 /* WAKE LOCK */
-let wakeLock=null;
-async function enableWakeLock(){ try{ wakeLock=await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release",()=>wakeLock=null); }catch(err){ console.log("WakeLock failed",err); } }
+let wakeLock = null;
+async function enableWakeLock(){
+  try{ wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release",()=>wakeLock=null); }
+  catch(err){ console.log("WakeLock failed",err); }
+}
 document.addEventListener("click",()=>enableWakeLock(),{once:true});
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden) enableWakeLock(); });
+document.addEventListener("visibilitychange",()=>{if(!document.hidden) enableWakeLock();});
 
+/* DISTANCE/TIME */
 function distanceMeters(p1,p2){ const R=6371000; const dLat=(p2.lat-p1.lat)*Math.PI/180; const dLon=(p2.lon-p1.lon)*Math.PI/180; const lat1=p1.lat*Math.PI/180; const lat2=p2.lat*Math.PI/180; const a=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); return R*c; }
-function updateStats(){ if(route.length<2){ statsDiv.textContent="Distance: 0 m | Time: 0 s"; return } let dist=0; for(let i=1;i<route.length;i++) dist+=distanceMeters(route[i-1],route[i]); const elapsed=Math.floor((route[route.length-1].time-route[0].time)/1000); statsDiv.textContent=`Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`; }
-
-function addPoint(lat,lon){ const timestamp = Date.now(); const point={lat:+lat.toFixed(6), lon:+lon.toFixed(6), time:timestamp}; route.push(point); lastPoint=point; localStorage.setItem("gpsRoute", JSON.stringify(route)); const pts=route.map(p=>[p.lat,p.lon]); polylineOutline.setLatLngs(pts); polyline.setLatLngs(pts); if(!marker) marker=L.marker([lat,lon]).addTo(map); else marker.setLatLng([lat,lon]); if(followEnabled()) map.setView([lat,lon]); updateStats(); }
-function handlePosition(pos){ const {latitude,longitude}=pos.coords; if(!lastPoint||Math.abs(latitude-lastPoint.lat)>THRESHOLD||Math.abs(longitude-lastPoint.lon)>THRESHOLD) addPoint(latitude,longitude); }
-
-function fallbackLocate(){ 
-  map.locate({setView:true,maxZoom:15,watch:false}).on('locationfound',e=>{ if(!lastPoint)addPoint(e.latitude,e.longitude); }).on('locationerror',()=>{ console.log("IP fallback failed"); }); 
+function updateStats(){ 
+  if(route.length<2){ statsDiv.textContent="Distance: 0 m | Time: 0 s"; return; }
+  let dist=0; for(let i=1;i<route.length;i++) dist+=distanceMeters(route[i-1],route[i]);
+  const elapsed = Math.floor((route[route.length-1].time-route[0].time)/1000);
+  statsDiv.textContent=`Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`;
 }
 
+/* ADD POINT */
+function addPoint(lat,lon){
+  const timestamp=Date.now(); const point={lat,lon,time:timestamp};
+  route.push(point); lastPoint=point;
+  localStorage.setItem("gpsRoute",JSON.stringify(route));
+  const pts = route.map(p=>[p.lat,p.lon]);
+  polylineOutline.setLatLngs(pts); polyline.setLatLngs(pts);
+  if(!marker) marker=L.marker([lat,lon]).addTo(map); else marker.setLatLng([lat,lon]);
+  if(followEnabled()) map.setView([lat,lon]);
+  updateStats();
+}
+function handlePosition(pos){ const {latitude,longitude}=pos.coords; if(!lastPoint || Math.abs(latitude-lastPoint.lat)>THRESHOLD || Math.abs(longitude-lastPoint.lon)>THRESHOLD) addPoint(latitude,longitude); }
+
+/* FALLBACK IP LOCATE */
+async function ipFallbackLocate(){
+  try{
+    const resp = await fetch("https://ipapi.co/json/");
+    const data = await resp.json();
+    if(data.latitude && data.longitude) addPoint(data.latitude,data.longitude);
+  }catch(err){ console.log("IP fallback failed",err); }
+}
+
+function fallbackLocate(){ ipFallbackLocate(); }
+
+/* START TRACKING */
 function startTracking(){
   if(!navigator.geolocation){ fallbackLocate(); return; }
-  navigator.geolocation.getCurrentPosition(pos=>handlePosition(pos), err=>fallbackLocate(),{enableHighAccuracy:true,timeout:10000});
-  navigator.geolocation.watchPosition(pos=>handlePosition(pos), err=>fallbackLocate(),{maximumAge:0,enableHighAccuracy:true});
+  navigator.geolocation.getCurrentPosition(pos=>handlePosition(pos), err=>fallbackLocate(), {enableHighAccuracy:true,timeout:10000});
+  navigator.geolocation.watchPosition(pos=>handlePosition(pos), err=>fallbackLocate(), {maximumAge:0,enableHighAccuracy:true});
 }
 
+/* INIT */
 polylineOutline.setLatLngs(route.map(p=>[p.lat,p.lon]));
 polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
 if(route.length){ const last=route[route.length-1]; marker=L.marker([last.lat,last.lon]).addTo(map); if(followEnabled()) map.setView([last.lat,last.lon]); }
 updateStats();
+startTracking();
+window.addEventListener("load",()=>map.invalidateSize());
 
-/* DELTA + GZIP EXPORT/IMPORT */
-function encodeRouteDeltaGzip(arr){ if(!arr.length) return ""; const flat=[]; flat.push(arr[0].lat,arr[0].lon,arr[0].time); for(let i=1;i<arr.length;i++){ flat.push(arr[i].lat-arr[i-1].lat, arr[i].lon-arr[i-1].lon, arr[i].time-arr[i-1].time); } const compressed=pako.deflate(flat.join(","),{level:9}); return btoa(String.fromCharCode(...compressed)); }
-function decodeRouteDeltaGzip(str){ if(!str) return []; const bytes=Uint8Array.from(atob(str),c=>c.charCodeAt(0)); const decompressed=pako.inflate(bytes,{to:'string'}); const nums=decompressed.split(",").map(Number); const res=[]; for(let i=0;i<nums.length;i+=3){ if(i===0) res.push({lat:nums[i],lon:nums[i+1],time:nums[i+2]}); else{ const last=res[res.length-1]; res.push({lat:last.lat+nums[i],lon:last.lon+nums[i+1],time:last.time+nums[i+2]}); } } return res; }
+/* HASH IMPORT ON LOAD */
+function importFromHash(){
+  const hash = location.hash.slice(1);
+  if(hash){
+    try{
+      const json = JSON.parse(atob(hash));
+      if(Array.isArray(json)){
+        route = json.map(p=>({lat:p.lat,lon:p.lon,time:p.time||Date.now()}));
+        lastPoint = route.length?route[route.length-1]:null;
+        localStorage.setItem("gpsRoute", JSON.stringify(route));
+        polylineOutline.setLatLngs(route.map(p=>[p.lat,p.lon]));
+        polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
+        if(route.length){ if(!marker) marker=L.marker([lastPoint.lat,lastPoint.lon]).addTo(map); marker.setLatLng([lastPoint.lat,lastPoint.lon]); if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]); }
+        updateStats();
+      }
+    }catch(e){ console.log("Invalid hash data",e); }
+    history.replaceState(null,null," "); // clear hash
+  }
+}
+importFromHash();
 
-document.getElementById("exportBtn").onclick=()=>{
-  const str=encodeRouteDeltaGzip(route);
-  const url=window.location.origin + window.location.pathname + "#" + str;
-  navigator.clipboard.writeText(url).then(()=>alert("Route URL copied!"));
+/* EXPORT/IMPORT/CLEAR */
+document.getElementById("exportBtn").onclick = ()=>{
+  try{
+    const b64 = btoa(JSON.stringify(route));
+    const url = location.origin + location.pathname + "#" + b64;
+    navigator.clipboard.writeText(url);
+    alert("URL copied to clipboard!");
+  }catch(err){ console.log("Export failed",err); }
 };
 
-document.getElementById("importBtn").onclick=()=>document.getElementById("fileInput").click();
-document.getElementById("fileInput").onchange=async e=>{
-  const file=e.target.files[0]; if(!file) return;
-  const text=await file.text();
+document.getElementById("importBtn").onclick = ()=>document.getElementById("fileInput").click();
+document.getElementById("fileInput").onchange = async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const text = await file.text();
   try{
-    const arr=JSON.parse(text);
-    if(!Array.isArray(arr)){ alert("Invalid route"); return }
-    route=arr.map(p=>({lat:+p.lat.toFixed(6), lon:+p.lon.toFixed(6), time:p.time||Date.now()}));
-    lastPoint=route.length?route[route.length-1]:null;
-    localStorage.setItem("gpsRoute", JSON.stringify(route));
+    const arr = JSON.parse(text);
+    if(!Array.isArray(arr)){ alert("Invalid route file"); return; }
+    route = arr.map(p=>({lat:p.lat,lon:p.lon,time:p.time||Date.now()}));
+    lastPoint = route.length?route[route.length-1]:null;
+    localStorage.setItem("gpsRoute",JSON.stringify(route));
     polylineOutline.setLatLngs(route.map(p=>[p.lat,p.lon]));
     polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
-    if(route.length){ const last=route[route.length-1]; if(!marker) marker=L.marker([last.lat,last.lon]).addTo(map); else marker.setLatLng([last.lat,last.lon]); if(followEnabled()) map.setView([last.lat,last.lon]); }
+    if(route.length){ if(!marker) marker=L.marker([lastPoint.lat,lastPoint.lon]).addTo(map); marker.setLatLng([lastPoint.lat,lastPoint.lon]); if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]); }
     updateStats();
   }catch(err){ alert("Error loading route"); }
 };
 
-document.getElementById("clearBtn").onclick=()=>{ localStorage.removeItem("gpsRoute"); location.reload(); };
-
-// import from URL hash
-if(location.hash.length>1){
-  try{
-    const arr = decodeRouteDeltaGzip(location.hash.substring(1));
-    if(arr.length){ route=arr; lastPoint=route[route.length-1]; localStorage.setItem("gpsRoute", JSON.stringify(route));
-      polylineOutline.setLatLngs(route.map(p=>[p.lat,p.lon]));
-      polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
-      if(lastPoint){ if(!marker) marker=L.marker([lastPoint.lat,lastPoint.lon]).addTo(map); else marker.setLatLng([lastPoint.lat,lastPoint.lon]); if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]); }
-      updateStats();
-    }
-  }catch(err){ console.log("URL hash import failed",err); }
-  history.replaceState(null,null,window.location.pathname);
-}
-
-startTracking();
-window.addEventListener("load",()=>map.invalidateSize());
+document.getElementById("clearBtn").onclick=()=>{
+  localStorage.removeItem("gpsRoute");
+  lastPoint=null; route=[];
+  polyline.setLatLngs([]); polylineOutline.setLatLngs([]);
+  marker&&map.removeLayer(marker); marker=null;
+  fallbackLocate();
+};
 </script>
 </body>
 </html>
