@@ -94,12 +94,7 @@ async function startAudioAndWakeLock() {
         if ('wakeLock' in navigator) {
             wakeLock = await navigator.wakeLock.request('screen');
             console.log('Wake Lock acquired');
-            wakeLock.addEventListener('release', () => {
-                console.log('Wake Lock released, reacquiring...');
-                startAudioAndWakeLock();
-            });
-        } else {
-            console.warn('Wake Lock API not supported.');
+            wakeLock.addEventListener('release', () => startAudioAndWakeLock());
         }
     } catch(err) { console.error('Could not acquire Wake Lock:', err); }
 }
@@ -117,14 +112,7 @@ let lastPoint = null;
 const THRESHOLD = 0.00001;
 const statsDiv = document.getElementById("statsPanel");
 let polyline = L.polyline([], { color: "red" }).addTo(map);
-
-// Custom red marker
-let markerIcon = L.icon({
-    iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iOCIgZmlsbD0icmVkIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIiLz48L3N2Zz4=',
-    iconSize: [24,24],
-    iconAnchor: [12,12]
-});
-let marker = null;
+let marker = null; // default marker
 
 // ---------------- STORAGE ----------------
 function saveRouteToStorage() {
@@ -141,9 +129,10 @@ function loadRouteFromStorage() {
                 lastPoint = route.length ? route[route.length-1] : null;
                 polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
                 if(route.length){
-                    if(!marker) marker = L.marker([lastPoint.lat,lastPoint.lon], {icon:markerIcon}).addTo(map);
-                    else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
-                    map.setView([lastPoint.lat,lastPoint.lon],17);
+                    const last = route[route.length-1];
+                    if(!marker) marker = L.marker([last.lat,last.lon]).addTo(map);
+                    else marker.setLatLng([last.lat,last.lon]);
+                    map.setView([last.lat,last.lon],17);
                 }
                 updateStats();
             }
@@ -187,8 +176,7 @@ map.locate({ setView:true, maxZoom:mZoom, watch:true, enableHighAccuracy:true })
            route.push(point);
            lastPoint=point;
            polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
-           // Update or create custom marker
-           if(!marker) marker=L.marker([lat,lng],{icon:markerIcon}).addTo(map);
+           if(!marker) marker = L.marker([lat,lng]).addTo(map);
            else marker.setLatLng([lat,lng]);
            updateStats();
            saveRouteToStorage();
@@ -208,7 +196,6 @@ document.getElementById("exportBtn").onclick=()=>{
 
 // ---------------- IMPORT ----------------
 document.getElementById("importBtn").onclick=()=>document.getElementById("fileInput").click();
-
 document.getElementById("fileInput").onchange=async e=>{
     const file=e.target.files[0]; if(!file) return;
     const text=await file.text();
@@ -219,9 +206,10 @@ document.getElementById("fileInput").onchange=async e=>{
         lastPoint=route.length?route[route.length-1]:null;
         polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
         if(route.length){
-            if(!marker) marker=L.marker([lastPoint.lat,lastPoint.lon],{icon:markerIcon}).addTo(map);
-            else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
-            map.setView([lastPoint.lat,lastPoint.lon],17);
+            const last = route[route.length-1];
+            if(!marker) marker = L.marker([last.lat,last.lon]).addTo(map);
+            else marker.setLatLng([last.lat,last.lon]);
+            map.setView([last.lat,last.lon],17);
         }
         updateStats();
         saveRouteToStorage();
