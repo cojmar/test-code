@@ -177,7 +177,7 @@ updateStats();
 startTracking();
 window.addEventListener("load", ()=>map.invalidateSize());
 
-/* DELTA + GZIP with time deltas (full mechanics preserved) */
+/* DELTA + GZIP for URL and file */
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
 const fileInput = document.getElementById("fileInput");
@@ -211,18 +211,44 @@ function decodeDeltaInt(deltas){
     return res;
 }
 
+// Convert Uint8Array to Base64
+function uint8ToBase64(u8Arr){
+    let CHUNK_SIZE = 0x8000;
+    let index = 0;
+    let length = u8Arr.length;
+    let result = '';
+    let slice;
+    while(index < length){
+        slice = u8Arr.subarray(index, Math.min(index + CHUNK_SIZE, length));
+        result += String.fromCharCode.apply(null, slice);
+        index += CHUNK_SIZE;
+    }
+    return btoa(result);
+}
+
+// Convert Base64 to Uint8Array
+function base64ToUint8(b64){
+    const binary = atob(b64);
+    const len = binary.length;
+    const u8Arr = new Uint8Array(len);
+    for(let i=0;i<len;i++) u8Arr[i] = binary.charCodeAt(i);
+    return u8Arr;
+}
+
 // EXPORT: clipboard URL + gzip file
 exportBtn.onclick = ()=>{
     const delta = encodeDeltaInt(route);
     const jsonStr = JSON.stringify(delta);
 
-    // Clipboard URL (full URL, original mechanics preserved)
-    const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
-    const fullURL = window.location.origin + window.location.pathname + "#" + b64;
+    // Compress JSON
+    const compressed = pako.gzip(jsonStr);
+
+    // URL hash (base64 of compressed)
+    const hashB64 = uint8ToBase64(compressed);
+    const fullURL = window.location.origin + window.location.pathname + "#" + hashB64;
     navigator.clipboard.writeText(fullURL);
 
-    // File download (gzip)
-    const compressed = pako.gzip(jsonStr);
+    // File download
     const blob = new Blob([compressed], {type:"application/gzip"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -258,12 +284,13 @@ fileInput.onchange = async e=>{
     }catch(err){ alert("Error loading gzip file: "+err); }
 };
 
-// URL hash import
+// URL hash import (gzip)
 function importFromURL(){
     if(location.hash.length>1){
         try{
-            const delta = JSON.parse(decodeURIComponent(escape(atob(location.hash.substring(1)))));
-            const arr = decodeDeltaInt(delta);
+            const compressed = base64ToUint8(location.hash.substring(1));
+            const jsonStr = pako.ungzip(compressed, {to:"string"});
+            const arr = decodeDeltaInt(JSON.parse(jsonStr));
             if(Array.isArray(arr)){
                 route = arr;
                 lastPoint = route.length? route[route.length-1]:null;
