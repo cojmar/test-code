@@ -87,7 +87,6 @@
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-// ---------------- MAP ----------------
 const mZoom = 18
 const map = L.map('map').setView([0, 0], mZoom)
 
@@ -100,9 +99,9 @@ let route = []
 let marker = null
 let polyline = L.polyline([], { color: "red" }).addTo(map)
 let lastPoint = null
-const THRESHOLD = 0.00001 // ~1 meter
-
+const THRESHOLD = 0.00001
 const statsDiv = document.getElementById("statsPanel")
+let firstFixDone = false
 
 function distanceMeters(p1, p2) {
     const R = 6371000
@@ -135,50 +134,49 @@ function startTracking() {
         return
     }
 
+    // 1️⃣ Fallback IP-based first
+    map.locate({setView: true, maxZoom: 15, watch: false})
+       .on('locationfound', e => {
+           if (!firstFixDone) {
+               const point = { lat: e.latitude, lon: e.longitude, time: Date.now() }
+               route.push(point)
+               lastPoint = point
+               marker = L.marker([e.latitude, e.longitude]).addTo(map)
+               polyline.setLatLngs([[e.latitude, e.longitude]])
+               updateStats()
+               firstFixDone = true
+           }
+       })
+       .on('locationerror', () => console.warn("IP location failed, waiting for GPS..."))
+
+    // 2️⃣ GPS watch
     navigator.geolocation.watchPosition(
         pos => {
             const { latitude, longitude } = pos.coords
-
+            const timestamp = Date.now()
             if (!lastPoint || Math.abs(latitude - lastPoint.lat) > THRESHOLD || Math.abs(longitude - lastPoint.lon) > THRESHOLD) {
-                const timestamp = Date.now()
                 const point = { lat: latitude, lon: longitude, time: timestamp }
-
                 route.push(point)
                 lastPoint = point
-
                 polyline.setLatLngs(route.map(p => [p.lat, p.lon]))
 
                 if (!marker) {
                     marker = L.marker([latitude, longitude]).addTo(map)
-                    map.setView([latitude, longitude], mZoom) // zoom on first fix
-                } else {
-                    marker.setLatLng([latitude, longitude])
                 }
+                marker.setLatLng([latitude, longitude])
 
                 updateStats()
+
+                if (!firstFixDone) {
+                    map.setView([latitude, longitude], mZoom)
+                    firstFixDone = true
+                }
             }
         },
-        err => console.warn("Geolocation error, falling back to IP:", err),
-        {
-            maximumAge: 60000,    // allow cached positions (IP fallback)
-            timeout: 10000,
-            enableHighAccuracy: false // allow coarse location if no GPS
-        }
+        err => console.warn("GPS error:", err),
+        { maximumAge: 60000, timeout: 10000, enableHighAccuracy: true }
     )
 }
-
-// Fallback for desktop without GPS: try locate method
-map.locate({setView: true, maxZoom: 15, watch: false})
-   .on('locationfound', e => {
-       if (!lastPoint) {
-           const point = { lat: e.latitude, lon: e.longitude, time: Date.now() }
-           route.push(point)
-           lastPoint = point
-           marker = L.marker([e.latitude, e.longitude]).addTo(map)
-           polyline.setLatLngs([[e.latitude, e.longitude]])
-           updateStats()
-       }
-   })
 
 startTracking()
 
@@ -213,7 +211,7 @@ document.getElementById("fileInput").onchange = async (e) => {
             const last = route[route.length-1]
             if (!marker) marker = L.marker([last.lat, last.lon]).addTo(map)
             marker.setLatLng([last.lat, last.lon])
-            map.setView([last.lat, last.lon], 17)
+            map.setView([last.lat, last.lon], mZoom)
         }
         updateStats()
     } catch(err) { alert("Error loading route") ;console.error(err) }
