@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Isometric GPS Streets</title>
+<title>Isometric GPS Streets with Orientation</title>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
 <style>
 html,body { margin:0; padding:0; height:100%; overflow:hidden; }
@@ -36,9 +36,10 @@ button:hover { background:#444; }
 <script>
 // ----------------- Config -----------------
 const TILE_WIDTH=32, TILE_HEIGHT=16;
-const route=[], lastPoint=null;
-const bbox = {minLat:40.712, minLon:-74.006, maxLat:40.715, maxLon:-74.002}; // NYC small area
-const scaleLatLon=100000; // scale lat/lon to grid
+const route=[];
+let lastPoint=null, lastAngle=0;
+const bbox = {minLat:40.712, minLon:-74.006, maxLat:40.715, maxLon:-74.002};
+const scaleLatLon=100000;
 
 let streetNodes=[], streetWays=[];
 
@@ -59,7 +60,7 @@ function create(){
   graphics=this.add.graphics();
   drawStreets(this);
 
-  player=this.add.image(0,0,'player').setOrigin(0.5,1).setDepth(1000);
+  player=this.add.image(0,0,'player').setOrigin(0.5,0.5).setDepth(1000);
   this.cameras.main.startFollow(player,true,0.1,0.1);
 }
 
@@ -70,7 +71,6 @@ async function fetchOSM(){
   const resp=await fetch(url);
   const data=await resp.json();
   streetWays=data.elements;
-  // extract nodes
   const nodesMap={};
   streetWays.forEach(w=>{
     w.geometry.forEach(n=>{ nodesMap[`${n.lat},${n.lon}`]=n; });
@@ -82,6 +82,7 @@ async function fetchOSM(){
 // ----------------- Draw Streets -----------------
 function drawStreets(scene){
   graphics.clear();
+  // Draw streets
   graphics.lineStyle(3,0x222222,1);
   streetWays.forEach(w=>{
     for(let i=1;i<w.geometry.length;i++){
@@ -124,12 +125,24 @@ if(navigator.geolocation){
   navigator.geolocation.watchPosition(pos=>{
     const {latitude, longitude}=pos.coords;
     const timestamp=Date.now();
-    if(!lastPoint || Math.abs(latitude-lastPoint?.lat)>0.00001 || Math.abs(longitude-lastPoint?.lon)>0.00001){
+    if(!lastPoint || Math.abs(latitude-lastPoint.lat)>0.00001 || Math.abs(longitude-lastPoint.lon)>0.00001){
       const point={lat:latitude, lon:longitude, time:timestamp};
       route.push(point);
-      lastPoint=point;
+
+      // Update player position
       const iso=latLonToIso(latitude,longitude,game.scene.scenes[0]);
       player.setPosition(iso.x,iso.y);
+
+      // Update orientation if previous point exists
+      if(lastPoint){
+        const dx = longitude-lastPoint.lon;
+        const dy = latitude-lastPoint.lat;
+        const angle = Math.atan2(dy, dx);
+        player.setRotation(angle - Math.PI/2);
+        lastAngle = angle;
+      }
+
+      lastPoint=point;
       updateStats();
       drawStreets(game.scene.scenes[0]);
     }
@@ -169,6 +182,11 @@ document.getElementById('fileInput').onchange=async e=>{
       const last=route[route.length-1];
       const iso=latLonToIso(last.lat,last.lon,game.scene.scenes[0]);
       player.setPosition(iso.x,iso.y);
+      if(route.length>1){
+        const prev=route[route.length-2];
+        const angle=Math.atan2(last.lat-prev.lat,last.lon-prev.lon);
+        player.setRotation(angle-Math.PI/2);
+      }
     }
     updateStats();
     drawStreets(game.scene.scenes[0]);
