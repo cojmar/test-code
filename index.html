@@ -10,7 +10,6 @@
   html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
   #map { width: 100%; height: 100%; }
 
-  /* Control buttons */
   #controls {
     position: fixed;
     top: 10px;
@@ -38,7 +37,6 @@
     background: #444;
   }
 
-  /* Large stats panel */
   #statsPanel {
     position: fixed;
     bottom: 10px;
@@ -56,20 +54,11 @@
   }
 
   @media (max-width: 500px) {
-    button {
-      font-size: 16px;
-      padding: 10px 14px;
-    }
-    #statsPanel {
-      font-size: 20px;
-      padding: 12px 20px;
-      min-width: 180px;
-    }
+    button { font-size: 16px; padding: 10px 14px; }
+    #statsPanel { font-size: 20px; padding: 12px 20px; min-width: 180px; }
   }
-.leaflet-control-container{
-    display: none !important;
-}
 
+  .leaflet-control-container{ display: none !important; }
 </style>
 </head>
 
@@ -89,12 +78,8 @@
 <script>
 const mZoom = 18
 const map = L.map('map').setView([0, 0], mZoom)
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: mZoom }).addTo(map)
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: mZoom
-}).addTo(map)
-
-// ---------------- ROUTE ----------------
 let route = []
 let marker = null
 let polyline = L.polyline([], { color: "red" }).addTo(map)
@@ -103,6 +88,34 @@ const THRESHOLD = 0.00001
 const statsDiv = document.getElementById("statsPanel")
 let firstFixDone = false
 
+// ---------- LOCAL STORAGE ----------
+function saveRoute() {
+    localStorage.setItem("gpsRoute", JSON.stringify(route))
+}
+
+function loadRoute() {
+    const stored = localStorage.getItem("gpsRoute")
+    if (stored) {
+        try {
+            const arr = JSON.parse(stored)
+            if (Array.isArray(arr)) {
+                route = arr.map(p => ({ lat: p.lat, lon: p.lon, time: p.time || Date.now() }))
+                lastPoint = route.length ? route[route.length-1] : null
+                polyline.setLatLngs(route.map(p => [p.lat, p.lon]))
+                if (route.length) {
+                    const last = route[route.length-1]
+                    if (!marker) marker = L.marker([last.lat, last.lon]).addTo(map)
+                    marker.setLatLng([last.lat, last.lon])
+                    map.setView([last.lat, last.lon], mZoom)
+                }
+                updateStats()
+                firstFixDone = route.length > 0
+            }
+        } catch(e) { console.error("Error loading stored route", e) }
+    }
+}
+
+// ---------- STATS ----------
 function distanceMeters(p1, p2) {
     const R = 6371000
     const dLat = (p2.lat - p1.lat) * Math.PI / 180
@@ -115,26 +128,17 @@ function distanceMeters(p1, p2) {
 }
 
 function updateStats() {
-    if (route.length < 2) {
-        statsDiv.textContent = "Distance: 0 m | Time: 0 s"
-        return
-    }
+    if (route.length < 2) { statsDiv.textContent = "Distance: 0 m | Time: 0 s"; return }
     let dist = 0
-    for (let i = 1; i < route.length; i++) {
-        dist += distanceMeters(route[i-1], route[i])
-    }
+    for (let i = 1; i < route.length; i++) dist += distanceMeters(route[i-1], route[i])
     const elapsed = Math.floor((route[route.length-1].time - route[0].time)/1000)
     statsDiv.textContent = `Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`
 }
 
-// ---------------- GEOLOCATION ----------------
+// ---------- GEOLOCATION ----------
 function startTracking() {
-    if (!navigator.geolocation) {
-        alert("Geolocation not supported in this browser.")
-        return
-    }
+    if (!navigator.geolocation) { alert("Geolocation not supported."); return }
 
-    // 1️⃣ Fallback IP-based first
     map.locate({setView: true, maxZoom: 15, watch: false})
        .on('locationfound', e => {
            if (!firstFixDone) {
@@ -144,12 +148,11 @@ function startTracking() {
                marker = L.marker([e.latitude, e.longitude]).addTo(map)
                polyline.setLatLngs([[e.latitude, e.longitude]])
                updateStats()
+               saveRoute()
                firstFixDone = true
            }
        })
-       .on('locationerror', () => console.warn("IP location failed, waiting for GPS..."))
 
-    // 2️⃣ GPS watch
     navigator.geolocation.watchPosition(
         pos => {
             const { latitude, longitude } = pos.coords
@@ -160,12 +163,11 @@ function startTracking() {
                 lastPoint = point
                 polyline.setLatLngs(route.map(p => [p.lat, p.lon]))
 
-                if (!marker) {
-                    marker = L.marker([latitude, longitude]).addTo(map)
-                }
+                if (!marker) marker = L.marker([latitude, longitude]).addTo(map)
                 marker.setLatLng([latitude, longitude])
 
                 updateStats()
+                saveRoute()
 
                 if (!firstFixDone) {
                     map.setView([latitude, longitude], mZoom)
@@ -178,9 +180,7 @@ function startTracking() {
     )
 }
 
-startTracking()
-
-// ---------------- EXPORT ----------------
+// ---------- EXPORT / IMPORT ----------
 document.getElementById("exportBtn").onclick = () => {
     const data = JSON.stringify(route, null, 2)
     const blob = new Blob([data], { type: "application/json" })
@@ -192,7 +192,6 @@ document.getElementById("exportBtn").onclick = () => {
     URL.revokeObjectURL(url)
 }
 
-// ---------------- IMPORT ----------------
 document.getElementById("importBtn").onclick = () => {
     document.getElementById("fileInput").click()
 }
@@ -214,8 +213,14 @@ document.getElementById("fileInput").onchange = async (e) => {
             map.setView([last.lat, last.lon], mZoom)
         }
         updateStats()
-    } catch(err) { alert("Error loading route") ;console.error(err) }
+        saveRoute() // overwrite storage
+        firstFixDone = route.length > 0
+    } catch(err) { alert("Error loading route"); console.error(err) }
 }
+
+// ---------- INIT ----------
+loadRoute()
+startTracking()
 </script>
 
 </body>
