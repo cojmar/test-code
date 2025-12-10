@@ -177,31 +177,36 @@ updateStats();
 startTracking();
 window.addEventListener("load", ()=>map.invalidateSize());
 
-/* DELTA + GZIP logic (preserves original mechanics) */
+/* DELTA + GZIP with time deltas (full mechanics preserved) */
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
 const fileInput = document.getElementById("fileInput");
 const PREC = 1e6;
 
-// Integer delta encoding
+// Encode integer deltas + time delta
 function encodeDeltaInt(route){
     if(!route.length) return [];
-    const deltas = [{lat:Math.round(route[0].lat*PREC), lon:Math.round(route[0].lon*PREC), time:route[0].time}];
+    const deltas = [{lat: Math.round(route[0].lat*PREC), lon: Math.round(route[0].lon*PREC), dt: route[0].time}];
     for(let i=1;i<route.length;i++){
         const dx = Math.round(route[i].lat*PREC)-Math.round(route[i-1].lat*PREC);
         const dy = Math.round(route[i].lon*PREC)-Math.round(route[i-1].lon*PREC);
-        deltas.push({dx, dy, time: route[i].time});
+        const dt = route[i].time - route[i-1].time;
+        deltas.push({dx, dy, dt});
     }
     return deltas;
 }
 
-// Decode integer deltas
+// Decode integer deltas + time delta
 function decodeDeltaInt(deltas){
     if(!deltas.length) return [];
-    const res = [{lat:deltas[0].lat/PREC, lon:deltas[0].lon/PREC, time:deltas[0].time}];
+    const res = [{lat: deltas[0].lat/PREC, lon: deltas[0].lon/PREC, time: deltas[0].dt}];
     for(let i=1;i<deltas.length;i++){
         const prev = res[i-1];
-        res.push({lat:prev.lat+deltas[i].dx/PREC, lon:prev.lon+deltas[i].dy/PREC, time:deltas[i].time});
+        res.push({
+            lat: prev.lat + deltas[i].dx/PREC,
+            lon: prev.lon + deltas[i].dy/PREC,
+            time: prev.time + deltas[i].dt
+        });
     }
     return res;
 }
