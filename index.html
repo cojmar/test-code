@@ -10,7 +10,6 @@
   html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
   #map { width: 100%; height: 100%; }
 
-  /* Control buttons */
   #controls {
     position: fixed;
     top: 10px;
@@ -34,11 +33,8 @@
     border-radius: 6px;
   }
 
-  button:hover {
-    background: #444;
-  }
+  button:hover { background: #444; }
 
-  /* Large stats panel */
   #statsPanel {
     position: fixed;
     bottom: 10px;
@@ -56,20 +52,11 @@
   }
 
   @media (max-width: 500px) {
-    button {
-      font-size: 16px;
-      padding: 10px 14px;
-    }
-    #statsPanel {
-      font-size: 20px;
-      padding: 12px 20px;
-      min-width: 180px;
-    }
+    button { font-size: 16px; padding: 10px 14px; }
+    #statsPanel { font-size: 20px; padding: 12px 20px; min-width: 180px; }
   }
-.leaflet-control-container{
-    display: none !important;
-}
 
+  .leaflet-control-container{ display: none !important; }
 </style>
 </head>
 
@@ -78,6 +65,7 @@
 <div id="controls">
     <button id="exportBtn">Export</button>
     <button id="importBtn">Import</button>
+    <button id="clearBtn">Clear</button>
     <input type="file" id="fileInput" style="display:none" />
 </div>
 
@@ -88,20 +76,18 @@
 
 <script>
 // ---------------- MAP ----------------
-const mZoom = 18
+const isMobile = /Mobi|Android/i.test(navigator.userAgent)
+const mZoom = isMobile ? 20 : 18
 const map = L.map('map').setView([0, 0], mZoom)
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: mZoom
-}).addTo(map)
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 22 }).addTo(map)
 
 // ---------------- ROUTE ----------------
-let route = []
+let route = JSON.parse(localStorage.getItem("gpsRoute") || "[]")
 let marker = null
 let polyline = L.polyline([], { color: "red" }).addTo(map)
-let lastPoint = null
+let lastPoint = route.length ? route[route.length-1] : null
 const THRESHOLD = 0.00001 // ~1 meter
-
 const statsDiv = document.getElementById("statsPanel")
 
 function distanceMeters(p1, p2) {
@@ -121,65 +107,57 @@ function updateStats() {
         return
     }
     let dist = 0
-    for (let i = 1; i < route.length; i++) {
-        dist += distanceMeters(route[i-1], route[i])
-    }
+    for (let i = 1; i < route.length; i++) dist += distanceMeters(route[i-1], route[i])
     const elapsed = Math.floor((route[route.length-1].time - route[0].time)/1000)
     statsDiv.textContent = `Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`
 }
 
-// ---------------- GEOLOCATION ----------------
-function startTracking() {
-    if (!navigator.geolocation) {
-        alert("Geolocation not supported in this browser.")
-        return
+// ---------------- WAKE LOCK ----------------
+let wakeLock = null
+async function requestWakeLock() {
+    if ('wakeLock' in navigator) {
+        try { wakeLock = await navigator.wakeLock.request('screen') }
+        catch(e) { console.warn("Wake lock failed:", e) }
     }
+}
+document.addEventListener("click", requestWakeLock, { once: true })
+
+// ---------------- GEOLOCATION ----------------
+function addPoint(lat, lon) {
+    const timestamp = Date.now()
+    const point = { lat, lon, time: timestamp }
+    route.push(point)
+    lastPoint = point
+    localStorage.setItem("gpsRoute", JSON.stringify(route))
+    polyline.setLatLngs(route.map(p => [p.lat, p.lon]))
+    if (!marker) { marker = L.marker([lat, lon]).addTo(map); map.setView([lat, lon], mZoom) }
+    else marker.setLatLng([lat, lon])
+    updateStats()
+}
+
+function startTracking() {
+    if (!navigator.geolocation) { fallbackLocate(); return }
 
     navigator.geolocation.watchPosition(
         pos => {
             const { latitude, longitude } = pos.coords
-
             if (!lastPoint || Math.abs(latitude - lastPoint.lat) > THRESHOLD || Math.abs(longitude - lastPoint.lon) > THRESHOLD) {
-                const timestamp = Date.now()
-                const point = { lat: latitude, lon: longitude, time: timestamp }
-
-                route.push(point)
-                lastPoint = point
-
-                polyline.setLatLngs(route.map(p => [p.lat, p.lon]))
-
-                if (!marker) {
-                    marker = L.marker([latitude, longitude]).addTo(map)
-                    map.setView([latitude, longitude], mZoom) // zoom on first fix
-                } else {
-                    marker.setLatLng([latitude, longitude])
-                }
-
-                updateStats()
+                addPoint(latitude, longitude)
             }
         },
-        err => console.warn("Geolocation error, falling back to IP:", err),
-        {
-            maximumAge: 60000,    // allow cached positions (IP fallback)
-            timeout: 10000,
-            enableHighAccuracy: false // allow coarse location if no GPS
-        }
+        err => { console.warn("Geolocation error, falling back to IP:", err); fallbackLocate() },
+        { maximumAge: 60000, timeout: 10000, enableHighAccuracy: false }
     )
 }
 
-// Fallback for desktop without GPS: try locate method
-map.locate({setView: true, maxZoom: 15, watch: false})
-   .on('locationfound', e => {
-       if (!lastPoint) {
-           const point = { lat: e.latitude, lon: e.longitude, time: Date.now() }
-           route.push(point)
-           lastPoint = point
-           marker = L.marker([e.latitude, e.longitude]).addTo(map)
-           polyline.setLatLngs([[e.latitude, e.longitude]])
-           updateStats()
-       }
-   })
+function fallbackLocate() {
+    map.locate({ setView: true, maxZoom: 15, watch: false })
+       .on('locationfound', e => { if (!lastPoint) addPoint(e.latitude, e.longitude) })
+}
 
+polyline.setLatLngs(route.map(p => [p.lat, p.lon]))
+if (route.length) { const last = route[route.length-1]; marker = L.marker([last.lat, last.lon]).addTo(map); map.setView([last.lat, last.lon], mZoom) }
+updateStats()
 startTracking()
 
 // ---------------- EXPORT ----------------
@@ -195,28 +173,32 @@ document.getElementById("exportBtn").onclick = () => {
 }
 
 // ---------------- IMPORT ----------------
-document.getElementById("importBtn").onclick = () => {
-    document.getElementById("fileInput").click()
-}
+document.getElementById("importBtn").onclick = () => document.getElementById("fileInput").click()
 
-document.getElementById("fileInput").onchange = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
+document.getElementById("fileInput").onchange = async e => {
+    const file = e.target.files[0]; if (!file) return
     const text = await file.text()
     try {
         const arr = JSON.parse(text)
         if (!Array.isArray(arr)) { alert("Invalid route file"); return }
         route = arr.map(p => ({ lat: p.lat, lon: p.lon, time: p.time || Date.now() }))
         lastPoint = route.length ? route[route.length-1] : null
+        localStorage.setItem("gpsRoute", JSON.stringify(route))
         polyline.setLatLngs(route.map(p => [p.lat, p.lon]))
         if (route.length) {
             const last = route[route.length-1]
             if (!marker) marker = L.marker([last.lat, last.lon]).addTo(map)
             marker.setLatLng([last.lat, last.lon])
-            map.setView([last.lat, last.lon], 17)
+            map.setView([last.lat, last.lon], mZoom)
         }
         updateStats()
-    } catch(err) { alert("Error loading route") ;console.error(err) }
+    } catch(err) { alert("Error loading route"); console.error(err) }
+}
+
+// ---------------- CLEAR ----------------
+document.getElementById("clearBtn").onclick = () => {
+    localStorage.removeItem("gpsRoute")
+    location.reload()
 }
 </script>
 
