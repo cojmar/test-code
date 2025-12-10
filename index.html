@@ -66,10 +66,10 @@
       min-width: 180px;
     }
   }
-.leaflet-control-container{
-    display: none !important;
-}
 
+  .leaflet-control-container {
+    display: none !important;
+  }
 </style>
 </head>
 
@@ -78,9 +78,11 @@
 <audio id="bgAudio" loop>
   <source src="data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAA..." type="audio/mpeg">
 </audio>
+
 <div id="controls">
     <button id="exportBtn">Export</button>
     <button id="importBtn">Import</button>
+    <button id="clearBtn">Clear Data</button>
     <input type="file" id="fileInput" style="display:none" />
 </div>
 
@@ -103,6 +105,7 @@ function startAudioOnClick() {
 }
 document.addEventListener('click', startAudioOnClick);
 document.addEventListener('touchstart', startAudioOnClick);
+
 // ---------------- MAP ----------------
 const mZoom = 18
 const map = L.map('map').setView([0, 0], mZoom)
@@ -117,7 +120,6 @@ let marker = null
 let polyline = L.polyline([], { color: "red" }).addTo(map)
 let lastPoint = null
 const THRESHOLD = 0.00001 // ~1 meter
-
 const statsDiv = document.getElementById("statsPanel")
 
 function distanceMeters(p1, p2) {
@@ -142,6 +144,41 @@ function updateStats() {
     }
     const elapsed = Math.floor((route[route.length-1].time - route[0].time)/1000)
     statsDiv.textContent = `Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`
+}
+
+// ---------------- STORAGE ----------------
+function saveRouteToStorage() {
+    localStorage.setItem("routeData", JSON.stringify(route))
+}
+
+function loadRouteFromStorage() {
+    const stored = localStorage.getItem("routeData")
+    if (stored) {
+        try {
+            const arr = JSON.parse(stored)
+            if (Array.isArray(arr)) {
+                route = arr.map(p => ({ lat: p.lat, lon: p.lon, time: p.time || Date.now() }))
+                lastPoint = route.length ? route[route.length-1] : null
+                polyline.setLatLngs(route.map(p => [p.lat, p.lon]))
+                if (route.length) {
+                    const last = route[route.length-1]
+                    if (!marker) marker = L.marker([last.lat, last.lon]).addTo(map)
+                    marker.setLatLng([last.lat, last.lon])
+                    map.setView([last.lat, last.lon], 17)
+                }
+                updateStats()
+            }
+        } catch(err) { console.error("Failed to load route from storage:", err) }
+    }
+}
+
+function clearRouteStorage() {
+    localStorage.removeItem("routeData")
+    route = []
+    lastPoint = null
+    polyline.setLatLngs([])
+    if (marker) { map.removeLayer(marker); marker = null }
+    updateStats()
 }
 
 // ---------------- GEOLOCATION ----------------
@@ -172,18 +209,19 @@ function startTracking() {
                 }
 
                 updateStats()
+                saveRouteToStorage()
             }
         },
         err => console.warn("Geolocation error, falling back to IP:", err),
         {
-            maximumAge: 60000,    // allow cached positions (IP fallback)
+            maximumAge: 60000,
             timeout: 10000,
-            enableHighAccuracy: false // allow coarse location if no GPS
+            enableHighAccuracy: false
         }
     )
 }
 
-// Fallback for desktop without GPS: try locate method
+// Fallback for desktop without GPS
 map.locate({setView: true, maxZoom: mZoom, watch: false})
    .on('locationfound', e => {
        if (!lastPoint) {
@@ -193,9 +231,11 @@ map.locate({setView: true, maxZoom: mZoom, watch: false})
            marker = L.marker([e.latitude, e.longitude]).addTo(map)
            polyline.setLatLngs([[e.latitude, e.longitude]])
            updateStats()
+           saveRouteToStorage()
        }
    })
 
+loadRouteFromStorage()
 startTracking()
 
 // ---------------- EXPORT ----------------
@@ -232,7 +272,13 @@ document.getElementById("fileInput").onchange = async (e) => {
             map.setView([last.lat, last.lon], 17)
         }
         updateStats()
-    } catch(err) { alert("Error loading route") ;console.error(err) }
+        saveRouteToStorage()
+    } catch(err) { alert("Error loading route"); console.error(err) }
+}
+
+// ---------------- CLEAR ----------------
+document.getElementById("clearBtn").onclick = () => {
+    if (confirm("Clear all route data?")) clearRouteStorage()
 }
 </script>
 
