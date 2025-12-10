@@ -1,58 +1,68 @@
 <!DOCTYPE html>
-<html lang="ro">
-
+<html>
 <head>
-    <meta charset="UTF-8" />
-    <title>Geolocație</title>
+<meta charset="UTF-8" />
+<title>GPS Route Tracker</title>
+
+<!-- Leaflet CSS inline via CDN link (allowed because it's still 1 file on our side) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  #map { width: 100%; height: 100%; }
+</style>
 </head>
 
 <body>
-    <h1>Geolocație</h1>
-    <button id="getLocationBtn">Scrie-ți locația</button>
-    <p id="status"></p>
-    <p id="coords"></p>
+<div id="map"></div>
 
-    <script>
-        const btn = document.getElementById('getLocationBtn');
-        const status = document.getElementById('status');
-        const coords = document.getElementById('coords');
+<!-- Leaflet JS from CDN (still 1 local file) -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-        btn.addEventListener('click', () => {
-            if ('geolocation' in navigator) {
-                status.textContent = 'Se cere permisiunea...';
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        const { latitude, longitude, accuracy } = position.coords;
-                        status.textContent = 'Geolocația a fost obținută.';
-                        coords.textContent = `Latitudine: ${latitude}, Longitudine: ${longitude}, Acuratețe: ${accuracy} `;
-                    },
-                    (err) => {
-                        switch (err.code) {
-                            case err.PERMISSION_DENIED:
-                                status.textContent = 'Permisiunea a fost refuzată de utilizator.';
-                                break;
-                            case err.POSITION_UNAVAILABLE:
-                                status.textContent = 'Poziția nu este disponibilă.';
-                                break;
-                            case err.TIMEOUT:
-                                status.textContent = 'Cererea a expirat.';
-                                break;
-                            default:
-                                status.textContent = 'Eroare necunoscută la obținerea geolocației.';
-                        }
-                        coords.textContent = '';
-                    },
-                    {
-                        enableHighAccuracy: true,
-                        timeout: 10000,
-                        maximumAge: 0
-                    }
-                );
-            } else {
-                status.textContent = 'Geolocația nu este suportată de acest browser.';
-            }
-        });
-    </script>
+<script>
+// --- APP START ---
+
+const map = L.map('map').setView([0, 0], 15);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19
+}).addTo(map);
+
+let route = [];
+let marker = null;
+let polyline = L.polyline([], { color: "red" }).addTo(map);
+
+if (!navigator.geolocation) {
+    alert("GPS not supported");
+}
+
+navigator.geolocation.watchPosition(
+    pos => {
+        const { latitude, longitude } = pos.coords;
+
+        // Save point to route
+        const point = [latitude, longitude];
+        route.push(point);
+        polyline.setLatLngs(route);
+
+        // Update or place marker
+        if (!marker) {
+            marker = L.marker(point).addTo(map);
+            map.setView(point, 17);
+        } else {
+            marker.setLatLng(point);
+        }
+    },
+    err => console.error(err),
+    {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 5000
+    }
+);
+
+// --- APP END ---
+</script>
+
 </body>
-
 </html>
