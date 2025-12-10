@@ -110,8 +110,8 @@ let route = JSON.parse(localStorage.getItem("gpsRoute")||"[]");
 let marker = null;
 
 /* POLYLINE WITH BORDER */
-let polylineBorder = L.polyline([], { color:"#0033FF", weight:11, opacity:0.9 }).addTo(map);
-let polyline = L.polyline([], { color:"#00FF00", weight:7, opacity:1 }).addTo(map);
+let polylineBorder = L.polyline([], { color:"#0033FF", weight:9, opacity:0.9 }).addTo(map);
+let polyline = L.polyline([], { color:"#00FF00", weight:5, opacity:1 }).addTo(map);
 
 let lastPoint = route.length ? route[route.length-1] : null;
 const THRESHOLD = 0.00001;
