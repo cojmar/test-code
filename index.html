@@ -164,7 +164,7 @@ function addPoint(lat, lon){
         marker.setLatLng([lat,lon]);
     }
 
-    map.setView([lat, lon], mZoom);
+    map.setView([lat, lon])
     updateStats();
 }
 
@@ -203,7 +203,7 @@ polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
 if(route.length){
     const last=route[route.length-1];
     marker = L.marker([last.lat,last.lon]).addTo(map);
-    map.setView([last.lat,last.lon], mZoom);
+    map.setView([last.lat,last.lon]);
 }
 updateStats();
 startTracking();
@@ -244,7 +244,7 @@ document.getElementById("fileInput").onchange = async e => {
             const last = route[route.length-1];
             if(!marker) marker = L.marker([last.lat,last.lon]).addTo(map);
             marker.setLatLng([last.lat,last.lon]);
-            map.setView([last.lat,last.lon], mZoom);
+            map.setView([last.lat,last.lon]);
         }
 
         updateStats();
