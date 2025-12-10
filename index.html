@@ -69,33 +69,30 @@ label { color:white; font-size:22px; display:flex; align-items:center; font-weig
   <input type="file" id="fileInput" style="display:none" />
 </div>
 <div id="statsPanel">Distance: 0 m | Time: 0 s</div>
-<div id="map"></div>
+<div id="map"></div> 
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 <script>
 const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 const maxZoomAllowed = 19;
 const savedZoom = Number(localStorage.getItem("mapZoom") || (isMobile ? 19 : 18));
 const map = L.map('map', { maxZoom: maxZoomAllowed }).setView([0,0], savedZoom);
 map.on("zoomend", ()=>localStorage.setItem("mapZoom", map.getZoom()));
-
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:22 }).addTo(map);
 map.on('tileerror', ()=>map.eachLayer(l=>{ if(l instanceof L.TileLayer) l.redraw(); }));
 
 let followState = localStorage.getItem("followState") ?? "on";
 document.getElementById("followBox").checked = followState === "on";
 document.getElementById("followBox").onchange = ()=> {
-  localStorage.setItem("followState",
-    document.getElementById("followBox").checked ? "on" : "off");
+  localStorage.setItem("followState", document.getElementById("followBox").checked ? "on" : "off");
 };
 function followEnabled(){ return document.getElementById("followBox").checked; }
 
 let route = JSON.parse(localStorage.getItem("gpsRoute")||"[]");
 let marker = null;
-
 const polylineOutline = L.polyline([], { color:"#0066FF", weight:11, opacity:0.9 }).addTo(map);
 const polyline = L.polyline([], { color:"#00FF00", weight:6 }).addTo(map);
-
 let lastPoint = route.length ? route[route.length-1] : null;
 const THRESHOLD = 0.00001;
 const statsDiv = document.getElementById("statsPanel");
@@ -116,8 +113,7 @@ function distanceMeters(p1,p2){
   const dLon = (p2.lon - p1.lon)*Math.PI/180;
   const lat1 = p1.lat*Math.PI/180;
   const lat2 = p2.lat*Math.PI/180;
-  const a = Math.sin(dLat/2)**2 
-            + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
   const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R*c;
 }
@@ -181,75 +177,116 @@ updateStats();
 startTracking();
 window.addEventListener("load", ()=>map.invalidateSize());
 
-/* EXPORT/IMPORT via Base64 URL */
-function encodeBase64(s){ return btoa(unescape(encodeURIComponent(s))); }
-function decodeBase64(s){ return decodeURIComponent(escape(atob(s))); }
+/* DELTA + GZIP logic (preserves original mechanics) */
+const exportBtn = document.getElementById("exportBtn");
+const importBtn = document.getElementById("importBtn");
+const fileInput = document.getElementById("fileInput");
+const PREC = 1e6;
 
-function importFromURL(){
-  if(location.hash.length>1){
-    try {
-      const imported = JSON.parse(decodeBase64(location.hash.substring(1)));
-      if(Array.isArray(imported)){
-        route = imported;
-        lastPoint = route.length ? route[route.length-1] : null;
-        localStorage.setItem("gpsRoute", JSON.stringify(route));
-        const pts = route.map(p=>[p.lat,p.lon]);
-        polylineOutline.setLatLngs(pts);
-        polyline.setLatLngs(pts);
-        if(route.length){
-          if(!marker) marker = L.marker([lastPoint.lat, lastPoint.lon]).addTo(map);
-          else marker.setLatLng([lastPoint.lat, lastPoint.lon]);
-          if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]);
-        }
-        updateStats();
-      }
-    } catch(e){
-      console.log("URL import failed", e);
+// Integer delta encoding
+function encodeDeltaInt(route){
+    if(!route.length) return [];
+    const deltas = [{lat:Math.round(route[0].lat*PREC), lon:Math.round(route[0].lon*PREC), time:route[0].time}];
+    for(let i=1;i<route.length;i++){
+        const dx = Math.round(route[i].lat*PREC)-Math.round(route[i-1].lat*PREC);
+        const dy = Math.round(route[i].lon*PREC)-Math.round(route[i-1].lon*PREC);
+        deltas.push({dx, dy, time: route[i].time});
     }
-    history.replaceState(null,null,location.pathname);
-  }
+    return deltas;
+}
+
+// Decode integer deltas
+function decodeDeltaInt(deltas){
+    if(!deltas.length) return [];
+    const res = [{lat:deltas[0].lat/PREC, lon:deltas[0].lon/PREC, time:deltas[0].time}];
+    for(let i=1;i<deltas.length;i++){
+        const prev = res[i-1];
+        res.push({lat:prev.lat+deltas[i].dx/PREC, lon:prev.lon+deltas[i].dy/PREC, time:deltas[i].time});
+    }
+    return res;
+}
+
+// EXPORT: clipboard URL + gzip file
+exportBtn.onclick = ()=>{
+    const delta = encodeDeltaInt(route);
+    const jsonStr = JSON.stringify(delta);
+
+    // Clipboard URL (full URL, original mechanics preserved)
+    const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+    const fullURL = window.location.origin + window.location.pathname + "#" + b64;
+    navigator.clipboard.writeText(fullURL);
+
+    // File download (gzip)
+    const compressed = pako.gzip(jsonStr);
+    const blob = new Blob([compressed], {type:"application/gzip"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "gps_route_delta.gz";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+};
+
+// IMPORT: file input
+importBtn.onclick = ()=>fileInput.click();
+fileInput.onchange = async e=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const arrayBuffer = await file.arrayBuffer();
+    try{
+        const decompressed = pako.ungzip(new Uint8Array(arrayBuffer), {to:"string"});
+        const arr = decodeDeltaInt(JSON.parse(decompressed));
+        if(Array.isArray(arr)){
+            route = arr;
+            lastPoint = route.length? route[route.length-1]:null;
+            localStorage.setItem("gpsRoute", JSON.stringify(route));
+            const pts = route.map(p=>[p.lat,p.lon]);
+            polylineOutline.setLatLngs(pts);
+            polyline.setLatLngs(pts);
+            if(route.length){
+                if(!marker) marker=L.marker([lastPoint.lat,lastPoint.lon]).addTo(map);
+                else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
+                if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]);
+            } else if(marker){ map.removeLayer(marker); marker=null; }
+            updateStats();
+        } else alert("Invalid delta file");
+    }catch(err){ alert("Error loading gzip file: "+err); }
+};
+
+// URL hash import
+function importFromURL(){
+    if(location.hash.length>1){
+        try{
+            const delta = JSON.parse(decodeURIComponent(escape(atob(location.hash.substring(1)))));
+            const arr = decodeDeltaInt(delta);
+            if(Array.isArray(arr)){
+                route = arr;
+                lastPoint = route.length? route[route.length-1]:null;
+                localStorage.setItem("gpsRoute", JSON.stringify(route));
+                const pts = route.map(p=>[p.lat,p.lon]);
+                polylineOutline.setLatLngs(pts);
+                polyline.setLatLngs(pts);
+                if(route.length){
+                    if(!marker) marker=L.marker([lastPoint.lat,lastPoint.lon]).addTo(map);
+                    else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
+                    if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]);
+                }
+                updateStats();
+            }
+        }catch(e){ console.log("URL import failed", e); }
+        history.replaceState(null,null,location.pathname);
+    }
 }
 importFromURL();
 
-document.getElementById("exportBtn").onclick = ()=>{
-  const b64 = encodeBase64(JSON.stringify(route));
-  const url = window.location.origin + window.location.pathname + "#" + b64;
-  navigator.clipboard.writeText(url).then(()=>alert("URL copied to clipboard"));
-};
-
-document.getElementById("importBtn").onclick = ()=>document.getElementById("fileInput").click();
-document.getElementById("fileInput").onchange = async e=>{
-  const file = e.target.files[0]; if(!file) return;
-  const text = await file.text();
-  try {
-    const arr = JSON.parse(text);
-    if(Array.isArray(arr)){
-      route = arr;
-      lastPoint = route.length ? route[route.length-1] : null;
-      localStorage.setItem("gpsRoute", JSON.stringify(route));
-      const pts = route.map(p=>[p.lat,p.lon]);
-      polylineOutline.setLatLngs(pts);
-      polyline.setLatLngs(pts);
-      if(route.length){
-        if(!marker) marker = L.marker([lastPoint.lat,lastPoint.lon]).addTo(map);
-        else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
-        if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]);
-      } else {
-        if(marker){ map.removeLayer(marker); marker = null; }
-      }
-      updateStats();
-    } else { alert("Invalid route file"); }
-  } catch(e){ alert("Error loading route"); }
-};
-
-document.getElementById("clearBtn").onclick = ()=>{
-  localStorage.removeItem("gpsRoute");
-  route = []; lastPoint = null;
-  polyline.setLatLngs([]); polylineOutline.setLatLngs([]);
-  if(marker){ map.removeLayer(marker); marker = null; }
-  updateStats();
+// CLEAR
+document.getElementById("clearBtn").onclick=()=>{
+    localStorage.removeItem("gpsRoute");
+    route=[]; lastPoint=null;
+    polyline.setLatLngs([]); polylineOutline.setLatLngs([]);
+    if(marker){ map.removeLayer(marker); marker=null; }
+    updateStats();
 };
 </script>
 </body>
 </html>
-
