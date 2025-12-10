@@ -74,7 +74,10 @@
 </head>
 
 <body>
-
+<!-- Silent audio to keep JS alive in background -->
+<audio id="bgAudio" loop>
+  <source src="data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAA..." type="audio/mpeg">
+</audio>
 <div id="controls">
     <button id="exportBtn">Export</button>
     <button id="importBtn">Import</button>
@@ -87,6 +90,19 @@
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
+// ---------------- BACKGROUND AUDIO ----------------
+const bgAudio = document.getElementById('bgAudio');
+let audioStarted = false;
+function startAudioOnClick() {
+    if (!audioStarted) {
+        bgAudio.play().catch(err => console.warn("Audio autoplay blocked:", err));
+        audioStarted = true;
+        document.removeEventListener('click', startAudioOnClick);
+        document.removeEventListener('touchstart', startAudioOnClick);
+    }
+}
+document.addEventListener('click', startAudioOnClick);
+document.addEventListener('touchstart', startAudioOnClick);
 // ---------------- MAP ----------------
 const mZoom = 18
 const map = L.map('map').setView([0, 0], mZoom)
