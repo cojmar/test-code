@@ -84,10 +84,10 @@
 
 <script>
 // ---------------- MAP ----------------
-const map = L.map('map').setView([0, 0], 22)
+const map = L.map('map').setView([0, 0], 19)
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 22
+    maxZoom: 19
 }).addTo(map)
 
 // ---------------- ROUTE ----------------
@@ -145,7 +145,7 @@ function startTracking() {
 
                 if (!marker) {
                     marker = L.marker([latitude, longitude]).addTo(map)
-                    map.setView([latitude, longitude], 22) // zoom on first fix
+                    map.setView([latitude, longitude], 19) // zoom on first fix
                 } else {
                     marker.setLatLng([latitude, longitude])
                 }
