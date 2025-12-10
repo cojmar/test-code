@@ -3,13 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <title>GPS Route Tracker Desktop & Mobile</title>
-
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-
 <style>
 html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
 #map { width:100%; height:100%; }
-
 #controls {
   position: fixed;
   top: 10px;
@@ -24,7 +21,6 @@ html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
   border-radius: 12px;
   z-index: 9999;
 }
-
 button {
   padding: 26px 36px;
   font-size:26px;
@@ -37,10 +33,8 @@ button {
   white-space:nowrap;
 }
 button:hover { background:#444; }
-
 #followBox { width:30px; height:30px; margin-right:8px; }
 label { color:white; font-size:22px; display:flex; align-items:center; font-weight:bold; }
-
 #statsPanel {
   position: fixed;
   bottom: 10px;
@@ -56,19 +50,15 @@ label { color:white; font-size:22px; display:flex; align-items:center; font-weig
   text-align: center;
   min-width: 220px;
 }
-
 @media (max-width:500px){
   button { padding:36px 48px; font-size:30px; }
   #controls { gap:18px; padding:20px; }
   #statsPanel { font-size:20px; padding:12px 20px; }
 }
-
 .leaflet-control-container{ display:none !important; }
 </style>
 </head>
-
 <body>
-
 <div id="controls">
   <button id="exportBtn">Export</button>
   <button id="importBtn">Import</button>
@@ -78,188 +68,186 @@ label { color:white; font-size:22px; display:flex; align-items:center; font-weig
   </label>
   <input type="file" id="fileInput" style="display:none" />
 </div>
-
 <div id="statsPanel">Distance: 0 m | Time: 0 s</div>
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
 const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 const maxZoomAllowed = 19;
 const savedZoom = Number(localStorage.getItem("mapZoom") || (isMobile ? 19 : 18));
 const map = L.map('map', { maxZoom: maxZoomAllowed }).setView([0,0], savedZoom);
+map.on("zoomend", ()=>localStorage.setItem("mapZoom", map.getZoom()));
 
-map.on("zoomend",()=>{ localStorage.setItem("mapZoom", map.getZoom()); });
-
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{ maxZoom:22 }).addTo(map);
-map.on('tileerror',()=>{ map.eachLayer(l=>{ if(l instanceof L.TileLayer) l.redraw(); }) });
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:22 }).addTo(map);
+map.on('tileerror', ()=>map.eachLayer(l=>{ if(l instanceof L.TileLayer) l.redraw(); }));
 
 let followState = localStorage.getItem("followState") ?? "on";
-document.getElementById("followBox").checked = followState==="on";
-document.getElementById("followBox").onchange = () => {
-  localStorage.setItem("followState", document.getElementById("followBox").checked ? "on":"off");
+document.getElementById("followBox").checked = followState === "on";
+document.getElementById("followBox").onchange = ()=> {
+  localStorage.setItem("followState",
+    document.getElementById("followBox").checked ? "on" : "off");
 };
 function followEnabled(){ return document.getElementById("followBox").checked; }
 
 let route = JSON.parse(localStorage.getItem("gpsRoute")||"[]");
 let marker = null;
 
-/* Polyline with outline */
-let polylineOutline = L.polyline([], { color: "#0066FF", weight: 11, opacity:0.9 }).addTo(map);
-let polyline = L.polyline([], { color:"#00FF00", weight:6, opacity:1 }).addTo(map);
+const polylineOutline = L.polyline([], { color:"#0066FF", weight:11, opacity:0.9 }).addTo(map);
+const polyline = L.polyline([], { color:"#00FF00", weight:6 }).addTo(map);
 
 let lastPoint = route.length ? route[route.length-1] : null;
-const statsDiv = document.getElementById("statsPanel");
 const THRESHOLD = 0.00001;
+const statsDiv = document.getElementById("statsPanel");
 
-/* WAKE LOCK */
 let wakeLock = null;
 async function enableWakeLock(){
   try {
     wakeLock = await navigator.wakeLock.request("screen");
-    wakeLock.addEventListener("release",()=>wakeLock=null);
-  } catch(err){ console.log("WakeLock failed:", err); }
+    wakeLock.addEventListener("release", ()=>wakeLock = null);
+  } catch(e){ console.log("WakeLock failed:", e); }
 }
-document.addEventListener("click",()=>{ enableWakeLock(); }, {once:true});
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden) enableWakeLock(); });
+document.addEventListener("click", ()=>enableWakeLock(), { once: true });
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) enableWakeLock(); });
 
-/* DISTANCE + TIME */
 function distanceMeters(p1,p2){
-  const R=6371000;
-  const dLat=(p2.lat-p1.lat)*Math.PI/180;
-  const dLon=(p2.lon-p1.lon)*Math.PI/180;
-  const lat1=p1.lat*Math.PI/180;
-  const lat2=p2.lat*Math.PI/180;
-  const a=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
-  const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  const R = 6371000;
+  const dLat = (p2.lat - p1.lat)*Math.PI/180;
+  const dLon = (p2.lon - p1.lon)*Math.PI/180;
+  const lat1 = p1.lat*Math.PI/180;
+  const lat2 = p2.lat*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 
+            + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R*c;
 }
 function updateStats(){
-  if(route.length<2){ statsDiv.textContent="Distance: 0 m | Time: 0 s"; return }
-  let dist=0;
-  for(let i=1;i<route.length;i++) dist+=distanceMeters(route[i-1],route[i]);
-  const elapsed=Math.floor((route[route.length-1].time-route[0].time)/1000);
-  statsDiv.textContent=`Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`;
+  if(route.length < 2){
+    statsDiv.textContent = "Distance: 0 m | Time: 0 s";
+    return;
+  }
+  let dist = 0;
+  for(let i = 1; i < route.length; i++){
+    dist += distanceMeters(route[i-1], route[i]);
+  }
+  const elapsed = Math.floor((route[route.length-1].time - route[0].time)/1000);
+  statsDiv.textContent = `Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`;
 }
 
-/* ADD POINT */
 function addPoint(lat, lon){
-  const timestamp=Date.now();
-  const point={lat, lon, time:timestamp};
+  const timestamp = Date.now();
+  const point = { lat, lon, time: timestamp };
   route.push(point);
   lastPoint = point;
   localStorage.setItem("gpsRoute", JSON.stringify(route));
 
-  const pts = route.map(p=>[p.lat,p.lon]);
+  const pts = route.map(p=>[p.lat, p.lon]);
   polylineOutline.setLatLngs(pts);
   polyline.setLatLngs(pts);
 
-  if(!marker) marker = L.marker([lat,lon]).addTo(map);
-  else marker.setLatLng([lat,lon]);
+  if(!marker) marker = L.marker([lat, lon]).addTo(map);
+  else marker.setLatLng([lat, lon]);
 
   if(followEnabled()) map.setView([lat, lon]);
   updateStats();
 }
 
-/* GEO */
 function handlePosition(pos){
-  const {latitude, longitude} = pos.coords;
-  if(!lastPoint || Math.abs(latitude-lastPoint.lat)>THRESHOLD || Math.abs(longitude-lastPoint.lon)>THRESHOLD)
+  const { latitude, longitude } = pos.coords;
+  if(!lastPoint || Math.abs(latitude - lastPoint.lat) > THRESHOLD
+     || Math.abs(longitude - lastPoint.lon) > THRESHOLD){
     addPoint(latitude, longitude);
-}
-
-async function fallbackLocate(){
-  try {
-    const resp = await fetch("https://geolocation-db.com/json/");
-    const data = await resp.json();
-    addPoint(data.latitude || 0, data.longitude || 0);
-    map.setView([data.latitude || 0, data.longitude || 0], Math.min(savedZoom, maxZoomAllowed));
-  } catch(err){
-    console.log("IP fallback failed:", err);
   }
 }
 
 function startTracking(){
   if(navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(handlePosition, fallbackLocate, { enableHighAccuracy:true, timeout:10000 });
-    navigator.geolocation.watchPosition(handlePosition, fallbackLocate, { maximumAge:0, enableHighAccuracy:true });
-  } else fallbackLocate();
+    navigator.geolocation.getCurrentPosition(handlePosition, ()=>{}, { enableHighAccuracy:true, timeout:10000 });
+    navigator.geolocation.watchPosition(handlePosition, ()=>{}, { maximumAge:0, enableHighAccuracy:true });
+  }
 }
 
 /* INIT */
-const ptsInit = route.map(p=>[p.lat,p.lon]);
-polylineOutline.setLatLngs(ptsInit);
-polyline.setLatLngs(ptsInit);
+polylineOutline.setLatLngs(route.map(p=>[p.lat,p.lon]));
+polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
 
 if(route.length){
-  const last=route[route.length-1];
-  marker = L.marker([last.lat,last.lon]).addTo(map);
-  if(followEnabled()) map.setView([last.lat,last.lon]);
+  const last = route[route.length-1];
+  marker = L.marker([last.lat, last.lon]).addTo(map);
+  if(followEnabled()) map.setView([last.lat, last.lon]);
 }
+
 updateStats();
 startTracking();
-window.addEventListener("load",()=>map.invalidateSize());
+window.addEventListener("load", ()=>map.invalidateSize());
 
-/* EXPORT/IMPORT via URL Base64 */
-function encodeBase64(data){ return btoa(unescape(encodeURIComponent(data))); }
-function decodeBase64(data){ return decodeURIComponent(escape(atob(data))); }
+/* EXPORT/IMPORT via Base64 URL */
+function encodeBase64(s){ return btoa(unescape(encodeURIComponent(s))); }
+function decodeBase64(s){ return decodeURIComponent(escape(atob(s))); }
 
 function importFromURL(){
   if(location.hash.length>1){
-    try{
-      const data = JSON.parse(decodeBase64(location.hash.substring(1)));
-      route = data.map(p=>({lat:p.lat, lon:p.lon, time:p.time||Date.now()}));
-      lastPoint = route.length?route[route.length-1]:null;
+    try {
+      const imported = JSON.parse(decodeBase64(location.hash.substring(1)));
+      if(Array.isArray(imported)){
+        route = imported;
+        lastPoint = route.length ? route[route.length-1] : null;
+        localStorage.setItem("gpsRoute", JSON.stringify(route));
+        const pts = route.map(p=>[p.lat,p.lon]);
+        polylineOutline.setLatLngs(pts);
+        polyline.setLatLngs(pts);
+        if(route.length){
+          if(!marker) marker = L.marker([lastPoint.lat, lastPoint.lon]).addTo(map);
+          else marker.setLatLng([lastPoint.lat, lastPoint.lon]);
+          if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]);
+        }
+        updateStats();
+      }
+    } catch(e){
+      console.log("URL import failed", e);
+    }
+    history.replaceState(null,null,location.pathname);
+  }
+}
+importFromURL();
+
+document.getElementById("exportBtn").onclick = ()=>{
+  const b64 = encodeBase64(JSON.stringify(route));
+  const url = window.location.origin + window.location.pathname + "#" + b64;
+  navigator.clipboard.writeText(url).then(()=>alert("URL copied to clipboard"));
+};
+
+document.getElementById("importBtn").onclick = ()=>document.getElementById("fileInput").click();
+document.getElementById("fileInput").onchange = async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const text = await file.text();
+  try {
+    const arr = JSON.parse(text);
+    if(Array.isArray(arr)){
+      route = arr;
+      lastPoint = route.length ? route[route.length-1] : null;
       localStorage.setItem("gpsRoute", JSON.stringify(route));
       const pts = route.map(p=>[p.lat,p.lon]);
       polylineOutline.setLatLngs(pts);
       polyline.setLatLngs(pts);
       if(route.length){
-        const last = route[route.length-1];
-        if(!marker) marker=L.marker([last.lat,last.lon]).addTo(map);
-        marker.setLatLng([last.lat,last.lon]);
-        if(followEnabled()) map.setView([last.lat,last.lon]);
+        if(!marker) marker = L.marker([lastPoint.lat,lastPoint.lon]).addTo(map);
+        else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
+        if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]);
+      } else {
+        if(marker){ map.removeLayer(marker); marker = null; }
       }
       updateStats();
-      history.replaceState(null,null,location.pathname); // clear hash
-    } catch(err){ console.log("URL import failed:", err); history.replaceState(null,null,location.pathname);}
-  }
-}
-importFromURL();
-
-document.getElementById("exportBtn").onclick=()=>{
-  const b64 = encodeBase64(JSON.stringify(route));
-  const url = location.origin + location.pathname + "#" + b64;
-  navigator.clipboard.writeText(url).then(()=>alert("URL copied to clipboard"));
+    } else { alert("Invalid route file"); }
+  } catch(e){ alert("Error loading route"); }
 };
 
-document.getElementById("importBtn").onclick=()=>document.getElementById("fileInput").click();
-document.getElementById("fileInput").onchange=async e=>{
-  const file = e.target.files[0]; if(!file) return;
-  const text = await file.text();
-  try{
-    const arr = JSON.parse(text);
-    if(!Array.isArray(arr)){ alert("Invalid route file"); return }
-    route = arr.map(p=>({lat:p.lat, lon:p.lon, time:p.time||Date.now()}));
-    lastPoint = route.length?route[route.length-1]:null;
-    localStorage.setItem("gpsRoute", JSON.stringify(route));
-    const pts = route.map(p=>[p.lat,p.lon]);
-    polylineOutline.setLatLngs(pts);
-    polyline.setLatLngs(pts);
-    if(route.length){
-      const last = route[route.length-1];
-      if(!marker) marker=L.marker([last.lat,last.lon]).addTo(map);
-      marker.setLatLng([last.lat,last.lon]);
-      if(followEnabled()) map.setView([last.lat,last.lon]);
-    }
-    updateStats();
-  }catch(err){ alert("Error loading route"); }
-};
-
-document.getElementById("clearBtn").onclick=()=>{
+document.getElementById("clearBtn").onclick = ()=>{
   localStorage.removeItem("gpsRoute");
-  location.reload();
+  route = []; lastPoint = null;
+  polyline.setLatLngs([]); polylineOutline.setLatLngs([]);
+  if(marker){ map.removeLayer(marker); marker = null; }
+  updateStats();
 };
 </script>
 </body>
