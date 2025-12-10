@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8" />
-<title>GPS Route Tracker Mobile Fixed Map</title>
+<title>GPS Route Tracker</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
@@ -10,7 +10,6 @@
   html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
   #map { width: 100%; height: 100%; }
 
-  /* Control buttons */
   #controls {
     position: fixed;
     top: 10px;
@@ -26,7 +25,7 @@
 
   button {
     padding: 12px 16px;
-    font-size: 22px;
+    font-size: 18px;
     border: none;
     background: #222;
     color: white;
@@ -38,7 +37,6 @@
     background: #444;
   }
 
-  /* Large stats panel */
   #statsPanel {
     position: fixed;
     bottom: 10px;
@@ -46,7 +44,7 @@
     transform: translateX(-50%);
     background: rgba(0,0,0,0.7);
     color: #fff;
-    font-size: 28px;
+    font-size: 24px;
     font-weight: bold;
     padding: 15px 25px;
     border-radius: 12px;
@@ -83,35 +81,27 @@
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-// ---------------- MAP + GPS ----------------
-const map = L.map('map').setView([0, 0], 19);
-
-// Ensure map size is correct after page loads
-window.addEventListener('load', () => {
-    setTimeout(() => map.invalidateSize(), 200);
-});
-
+// ---------------- MAP ----------------
+const map = L.map('map').setView([0, 0], 15); // normal zoom
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19
 }).addTo(map);
 
+// ---------------- ROUTE ----------------
 let route = [];
-let marker = L.marker([0,0]); 
+let marker = null;
 let polyline = L.polyline([], { color: "red" }).addTo(map);
-
 let lastPoint = null;
 const THRESHOLD = 0.00001; // ~1 meter
 
 const statsDiv = document.getElementById("statsPanel");
 
-// Distance in meters
 function distanceMeters(p1, p2) {
-    const R = 6371000; 
+    const R = 6371000;
     const dLat = (p2.lat - p1.lat) * Math.PI / 180;
     const dLon = (p2.lon - p1.lon) * Math.PI / 180;
     const lat1 = p1.lat * Math.PI / 180;
     const lat2 = p2.lat * Math.PI / 180;
-
     const a = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
@@ -122,24 +112,20 @@ function updateStats() {
         statsDiv.textContent = "Distance: 0 m | Time: 0 s";
         return;
     }
-
     let dist = 0;
     for (let i = 1; i < route.length; i++) {
         dist += distanceMeters(route[i-1], route[i]);
     }
-
     const elapsed = Math.floor((route[route.length-1].time - route[0].time)/1000);
     statsDiv.textContent = `Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`;
 }
 
+// ---------------- GPS ----------------
 navigator.geolocation.watchPosition(
     pos => {
         const { latitude, longitude } = pos.coords;
 
-        if (!lastPoint ||
-            Math.abs(latitude - lastPoint.lat) > THRESHOLD ||
-            Math.abs(longitude - lastPoint.lon) > THRESHOLD) {
-
+        if (!lastPoint || Math.abs(latitude - lastPoint.lat) > THRESHOLD || Math.abs(longitude - lastPoint.lon) > THRESHOLD) {
             const timestamp = Date.now();
             const point = { lat: latitude, lon: longitude, time: timestamp };
 
@@ -148,11 +134,11 @@ navigator.geolocation.watchPosition(
 
             polyline.setLatLngs(route.map(p => [p.lat, p.lon]));
 
-            if (!marker._map) {
-                marker = L.marker([point.lat, point.lon]).addTo(map);
-                map.setView([point.lat, point.lon], 19);
+            if (!marker) {
+                marker = L.marker([latitude, longitude]).addTo(map);
+                map.setView([latitude, longitude], 17); // start zoom when first GPS fix
             } else {
-                marker.setLatLng([point.lat, point.lon]);
+                marker.setLatLng([latitude, longitude]);
             }
 
             updateStats();
@@ -167,12 +153,10 @@ document.getElementById("exportBtn").onclick = () => {
     const data = JSON.stringify(route, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-
     const a = document.createElement("a");
     a.href = url;
     a.download = "route.txt";
     a.click();
-
     URL.revokeObjectURL(url);
 };
 
@@ -184,41 +168,21 @@ document.getElementById("importBtn").onclick = () => {
 document.getElementById("fileInput").onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const text = await file.text();
-
     try {
         const arr = JSON.parse(text);
-
-        if (!Array.isArray(arr)) {
-            alert("Invalid route file");
-            return;
-        }
-
-        route = arr.map(p => ({
-            lat: p.lat,
-            lon: p.lon,
-            time: p.time || Date.now()
-        }));
-
-        lastPoint = route.length > 0 ? route[route.length - 1] : null;
-
+        if (!Array.isArray(arr)) { alert("Invalid route file"); return; }
+        route = arr.map(p => ({ lat: p.lat, lon: p.lon, time: p.time || Date.now() }));
+        lastPoint = route.length ? route[route.length-1] : null;
         polyline.setLatLngs(route.map(p => [p.lat, p.lon]));
-
-        if (route.length > 0) {
-            const last = route[route.length - 1];
-
-            if (!marker._map) marker = L.marker([last.lat, last.lon]).addTo(map);
+        if (route.length) {
+            const last = route[route.length-1];
+            if (!marker) marker = L.marker([last.lat, last.lon]).addTo(map);
             marker.setLatLng([last.lat, last.lon]);
-            map.setView([last.lat, last.lon], 19);
+            map.setView([last.lat, last.lon], 17);
         }
-
         updateStats();
-
-    } catch (err) {
-        alert("Error loading route");
-        console.error(err);
-    }
+    } catch(err) { alert("Error loading route"); console.error(err); }
 };
 </script>
 
