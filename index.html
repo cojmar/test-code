@@ -96,6 +96,11 @@ map.on("zoomend",()=>{
   localStorage.setItem("mapZoom", map.getZoom()); 
 });
 
+/* RESTRICT MAP BOUNDS */
+const worldBounds = [[-90, -180],[90,180]];
+map.setMaxBounds(worldBounds);
+map.on('drag', ()=>{ map.panInsideBounds(worldBounds,{ animate:false }); });
+
 /* TILELAYER */
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{ maxZoom:19 }).addTo(map);
 map.on('tileerror',()=>{ map.eachLayer(l=>{ if(l instanceof L.TileLayer) l.redraw(); }) });
