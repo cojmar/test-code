@@ -177,7 +177,7 @@ updateStats();
 startTracking();
 window.addEventListener("load", ()=>map.invalidateSize());
 
-/* DELTA + GZIP for URL and file */
+/* DELTA + GZIP + GitHub Storage */
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
 const fileInput = document.getElementById("fileInput");
@@ -235,30 +235,98 @@ function base64ToUint8(b64){
     return u8Arr;
 }
 
-// EXPORT: clipboard URL + gzip file
-exportBtn.onclick = ()=>{
+/* --- GitHub Storage Config --- */
+const GITHUB_TOKEN = "YOUR_PERSONAL_ACCESS_TOKEN"; // visible in JS
+const GITHUB_OWNER = "YOUR_USERNAME";
+const GITHUB_REPO = "YOUR_STORAGE_REPO";
+const GITHUB_PATH_PREFIX = "routes/"; // optional folder
+
+// Helper to write file to GitHub
+async function writeFileToGitHub(fileName, dataUint8){
+    const path = GITHUB_PATH_PREFIX + fileName;
+    const base64Content = uint8ToBase64(dataUint8);
+
+    // Check existing SHA
+    let sha = null;
+    try{
+        const resCheck = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`, {
+            headers:{ Authorization:`token ${GITHUB_TOKEN}` }
+        });
+        if(resCheck.ok){
+            const json = await resCheck.json();
+            sha = json.sha;
+        }
+    }catch(e){}
+
+    const body = { message:"Update GPS route", content: base64Content };
+    if(sha) body.sha = sha;
+
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`, {
+        method:"PUT",
+        headers:{ Authorization:`token ${GITHUB_TOKEN}`, "Content-Type":"application/json" },
+        body: JSON.stringify(body)
+    });
+
+    if(!res.ok) console.error("GitHub write failed", await res.text());
+}
+
+/* --- Export Button --- */
+exportBtn.onclick = async ()=>{
     const delta = encodeDeltaInt(route);
     const jsonStr = JSON.stringify(delta);
-
-    // Compress JSON
     const compressed = pako.gzip(jsonStr);
 
-    // URL hash (base64 of compressed)
-    const hashB64 = uint8ToBase64(compressed);
-    const fullURL = window.location.origin + window.location.pathname + "#" + hashB64;
-    navigator.clipboard.writeText(fullURL);
+    // Generate unique filename
+    const fileName = "client_"+Date.now()+".gz";
+    await writeFileToGitHub(fileName, compressed);
 
-    // File download
+    // Copy tiny URL to clipboard
+    const url = window.location.origin + window.location.pathname + "#f=" + fileName;
+    navigator.clipboard.writeText(url);
+
+    // Local download
     const blob = new Blob([compressed], {type:"application/gzip"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "gps_route_delta.gz";
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     a.remove();
 };
 
-// IMPORT: file input
+/* --- Import from GitHub file (via URL hash) --- */
+function importFromURL(){
+    if(location.hash.startsWith("#f=")){
+        const fileName = location.hash.substring(3);
+        fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_PATH_PREFIX+fileName}`, {
+            headers:{ Authorization:`token ${GITHUB_TOKEN}` }
+        })
+        .then(res=>res.json())
+        .then(json=>{
+            if(json.content){
+                const compressed = base64ToUint8(json.content);
+                const jsonStr = pako.ungzip(compressed, {to:"string"});
+                route = decodeDeltaInt(JSON.parse(jsonStr));
+                lastPoint = route.length? route[route.length-1]:null;
+                localStorage.setItem("gpsRoute", JSON.stringify(route));
+                const pts = route.map(p=>[p.lat,p.lon]);
+                polylineOutline.setLatLngs(pts);
+                polyline.setLatLngs(pts);
+                if(route.length){
+                    if(!marker) marker=L.marker([lastPoint.lat,lastPoint.lon]).addTo(map);
+                    else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
+                    if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]);
+                }
+                updateStats();
+            }
+        })
+        .catch(e=>console.error("GitHub import failed", e));
+        history.replaceState(null,null,location.pathname);
+    }
+}
+importFromURL();
+
+/* --- File Input Import --- */
 importBtn.onclick = ()=>fileInput.click();
 fileInput.onchange = async e=>{
     const file = e.target.files[0];
@@ -280,38 +348,11 @@ fileInput.onchange = async e=>{
                 if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]);
             } else if(marker){ map.removeLayer(marker); marker=null; }
             updateStats();
-        } else alert("Invalid delta file");
+        }
     }catch(err){ alert("Error loading gzip file: "+err); }
 };
 
-// URL hash import (gzip)
-function importFromURL(){
-    if(location.hash.length>1){
-        try{
-            const compressed = base64ToUint8(location.hash.substring(1));
-            const jsonStr = pako.ungzip(compressed, {to:"string"});
-            const arr = decodeDeltaInt(JSON.parse(jsonStr));
-            if(Array.isArray(arr)){
-                route = arr;
-                lastPoint = route.length? route[route.length-1]:null;
-                localStorage.setItem("gpsRoute", JSON.stringify(route));
-                const pts = route.map(p=>[p.lat,p.lon]);
-                polylineOutline.setLatLngs(pts);
-                polyline.setLatLngs(pts);
-                if(route.length){
-                    if(!marker) marker=L.marker([lastPoint.lat,lastPoint.lon]).addTo(map);
-                    else marker.setLatLng([lastPoint.lat,lastPoint.lon]);
-                    if(followEnabled()) map.setView([lastPoint.lat,lastPoint.lon]);
-                }
-                updateStats();
-            }
-        }catch(e){ console.log("URL import failed", e); }
-        history.replaceState(null,null,location.pathname);
-    }
-}
-importFromURL();
-
-// CLEAR
+/* --- Clear --- */
 document.getElementById("clearBtn").onclick=()=>{
     localStorage.removeItem("gpsRoute");
     route=[]; lastPoint=null;
