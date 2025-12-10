@@ -10,14 +10,16 @@
   html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
   #map { width: 100%; height: 100%; }
 
+  /* CONTROLS - horizontal on all screens */
   #controls {
     position: fixed;
     top: 10px;
     left: 10px;
     z-index: 9999;
-    display: flex;
-    flex-direction: column;
+    display: flex;            /* horizontal by default */
+    flex-direction: row;      /* keep horizontal on desktop + mobile */
     gap: 8px;
+    align-items: center;
     background: rgba(0,0,0,0.5);
     padding: 10px;
     border-radius: 8px;
@@ -31,6 +33,7 @@
     color: white;
     cursor: pointer;
     border-radius: 6px;
+    white-space: nowrap;
   }
 
   button:hover { background: #444; }
@@ -52,15 +55,19 @@
   }
 
   @media (max-width: 500px) {
+    /* keep controls horizontal but make buttons MUCH bigger on mobile */
     #controls {
-      flex-direction: row !important;
       gap: 12px;
       padding: 14px;
+      left: 50%;
+      transform: translateX(-50%); /* center top on small screens */
+      top: 8px;
     }
 
     button {
       font-size: 22px !important;
-      padding: 18px 24px !important;
+      padding: 18px 26px !important;
+      border-radius: 8px;
     }
 
     #statsPanel {
@@ -117,10 +124,12 @@ async function enableWakeLock() {
     }
 }
 
+// first interaction
 document.addEventListener("click", () => {
     enableWakeLock();
 }, { once:true });
 
+// retry every time tab is visible again
 document.addEventListener("visibilitychange", () => {
     if (!document.hidden && wakeLock === null) {
         enableWakeLock();
@@ -164,7 +173,7 @@ function addPoint(lat, lon){
         marker.setLatLng([lat,lon]);
     }
 
-    map.setView([lat, lon])
+    map.setView([lat, lon], mZoom);
     updateStats();
 }
 
@@ -203,7 +212,7 @@ polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
 if(route.length){
     const last=route[route.length-1];
     marker = L.marker([last.lat,last.lon]).addTo(map);
-    map.setView([last.lat,last.lon]);
+    map.setView([last.lat,last.lon], mZoom);
 }
 updateStats();
 startTracking();
@@ -244,7 +253,7 @@ document.getElementById("fileInput").onchange = async e => {
             const last = route[route.length-1];
             if(!marker) marker = L.marker([last.lat,last.lon]).addTo(map);
             marker.setLatLng([last.lat,last.lon]);
-            map.setView([last.lat,last.lon]);
+            map.setView([last.lat,last.lon], mZoom);
         }
 
         updateStats();
