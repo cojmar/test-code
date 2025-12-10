@@ -110,10 +110,7 @@ document.addEventListener('click', startAudioAndWakeLock);
 document.addEventListener('touchstart', startAudioAndWakeLock);
 
 // ---------------- MAP ----------------
-let mZoom = 18;
-// Detect mobile for higher zoom
-if (/Mobi|Android/i.test(navigator.userAgent)) mZoom = 20;
-
+const mZoom = 18;
 const map = L.map('map').setView([0,0], mZoom);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:mZoom}).addTo(map);
 
@@ -123,8 +120,6 @@ let lastPoint = null;
 const THRESHOLD = 0.00001;
 const statsDiv = document.getElementById("statsPanel");
 let polyline = L.polyline([], { color: "red" }).addTo(map);
-
-// ----- MARKER -----
 let marker = null;
 
 // ---------------- STORAGE ----------------
@@ -142,7 +137,7 @@ function loadRouteFromStorage() {
                 lastPoint = route.length ? route[route.length-1] : null;
                 polyline.setLatLngs(route.map(p=>[p.lat,p.lon]));
                 if(route.length) {
-                    map.setView([lastPoint.lat,lastPoint.lon],mZoom);
+                    map.setView([lastPoint.lat,lastPoint.lon], mZoom);
                     marker = L.marker([lastPoint.lat,lastPoint.lon]).addTo(map);
                 }
                 updateStats();
@@ -190,9 +185,11 @@ map.locate({ setView:true, maxZoom:mZoom, watch:true, enableHighAccuracy:true })
            updateStats();
            saveRouteToStorage();
 
-           // ----- UPDATE MARKER -----
+           // ----- MARKER -----
            if(!marker){
                marker = L.marker([lat,lng]).addTo(map);
+               // Mobile: zoom closer on first fix
+               if (/Mobi|Android/i.test(navigator.userAgent)) map.setZoom(20);
            } else {
                marker.setLatLng([lat,lng]);
            }
@@ -225,7 +222,9 @@ document.getElementById("fileInput").onchange=async e=>{
         if(route.length){
             if(!marker) marker = L.marker([lastPoint.lat,lastPoint.lon]).addTo(map);
             marker.setLatLng([lastPoint.lat,lastPoint.lon]);
-            map.setView([lastPoint.lat,lastPoint.lon],mZoom);
+            map.setView([lastPoint.lat,lastPoint.lon], mZoom);
+            // Mobile zoom adjustment
+            if (/Mobi|Android/i.test(navigator.userAgent)) map.setZoom(20);
         }
         updateStats();
         saveRouteToStorage();
