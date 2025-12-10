@@ -72,7 +72,7 @@ button:hover { background: #444; }
 <div id="map"></div>
 
 <!-- Silent audio to keep JS alive in background -->
-<audio id="bgAudio" loop autoplay>
+<audio id="bgAudio" loop>
   <source src="data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAA..." type="audio/mpeg">
 </audio>
 
@@ -92,9 +92,7 @@ const statsDiv = document.getElementById("statsPanel");
 let firstFixDone = false;
 
 // ---------------- LOCAL STORAGE ----------------
-function saveRoute() {
-    localStorage.setItem("gpsRoute", JSON.stringify(route));
-}
+function saveRoute() { localStorage.setItem("gpsRoute", JSON.stringify(route)); }
 
 function loadRoute() {
     const stored = localStorage.getItem("gpsRoute");
@@ -140,46 +138,54 @@ function updateStats() {
 
 // ---------------- BACKGROUND AUDIO ----------------
 const bgAudio = document.getElementById('bgAudio');
-bgAudio.play().catch(err => console.warn("Autoplay blocked:", err));
+let audioStarted = false;
+function startAudioOnClick() {
+    if (!audioStarted) {
+        bgAudio.play().catch(err => console.warn("Audio autoplay blocked:", err));
+        audioStarted = true;
+        document.removeEventListener('click', startAudioOnClick);
+        document.removeEventListener('touchstart', startAudioOnClick);
+    }
+}
+document.addEventListener('click', startAudioOnClick);
+document.addEventListener('touchstart', startAudioOnClick);
 
 // ---------------- GEOLOCATION ----------------
 function startTracking() {
     if (!navigator.geolocation) { alert("Geolocation not supported."); return }
 
-    // first get approximate location via IP/fallback
+    // First approximate location via IP fallback
     map.locate({setView: true, maxZoom: 15, watch: false})
        .on('locationfound', e => {
            if (!firstFixDone) {
-               const point = { lat: e.latitude, lon: e.longitude, time: Date.now() }
-               route.push(point);
-               lastPoint = point;
-               marker = L.marker([e.latitude, e.longitude]).addTo(map);
-               polyline.setLatLngs([[e.latitude, e.longitude]]);
-               updateStats();
-               saveRoute();
-               firstFixDone = true;
+               const point = { lat: e.latitude, lon: e.longitude, time: Date.now() };
+               route.push(point); lastPoint = point;
+               if (!marker) marker = L.marker([point.lat, point.lon]).addTo(map);
+               polyline.setLatLngs([[point.lat, point.lon]]);
+               updateStats(); saveRoute(); firstFixDone = true;
            }
        });
 
-    // then watch GPS continuously
+    // Watch GPS continuously
     navigator.geolocation.watchPosition(
         pos => {
             const { latitude, longitude } = pos.coords;
             const timestamp = Date.now();
             if (!lastPoint || Math.abs(latitude - lastPoint.lat) > THRESHOLD || Math.abs(longitude - lastPoint.lon) > THRESHOLD) {
                 const point = { lat: latitude, lon: longitude, time: timestamp };
-                route.push(point);
-                lastPoint = point;
+                route.push(point); lastPoint = point;
                 polyline.setLatLngs(route.map(p => [p.lat, p.lon]));
                 if (!marker) marker = L.marker([latitude, longitude]).addTo(map);
                 marker.setLatLng([latitude, longitude]);
-                updateStats();
-                saveRoute();
+                updateStats(); saveRoute();
                 if (!firstFixDone) { map.setView([latitude, longitude], mZoom); firstFixDone = true; }
             }
         },
-        err => console.warn("GPS error:", err),
-        { maximumAge: 60000, timeout: 15000, enableHighAccuracy: true }
+        err => {
+            console.warn("GPS error, using IP fallback:", err);
+            if (!firstFixDone) map.locate({setView: true, maxZoom: 15, watch: false});
+        },
+        { maximumAge: 60000, timeout: 10000, enableHighAccuracy: false }
     );
 }
 
@@ -195,7 +201,7 @@ document.getElementById("exportBtn").onclick = () => {
     URL.revokeObjectURL(url);
 }
 
-document.getElementById("importBtn").onclick = () => { document.getElementById("fileInput").click() }
+document.getElementById("importBtn").onclick = () => { document.getElementById("fileInput").click(); }
 
 document.getElementById("fileInput").onchange = async (e) => {
     const file = e.target.files[0]; if (!file) return;
@@ -212,9 +218,7 @@ document.getElementById("fileInput").onchange = async (e) => {
             marker.setLatLng([last.lat, last.lon]);
             map.setView([last.lat, last.lon], mZoom);
         }
-        updateStats();
-        saveRoute(); // overwrite storage
-        firstFixDone = route.length > 0;
+        updateStats(); saveRoute(); firstFixDone = route.length > 0;
     } catch(err) { alert("Error loading route"); console.error(err); }
 }
 
