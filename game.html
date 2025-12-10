@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Isometric GPS Streets with Orientation</title>
+<title>Isometric GPS Streets</title>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
 <style>
 html,body { margin:0; padding:0; height:100%; overflow:hidden; }
@@ -37,9 +37,11 @@ button:hover { background:#444; }
 // ----------------- Config -----------------
 const TILE_WIDTH=32, TILE_HEIGHT=16;
 const route=[];
-let lastPoint=null, lastAngle=0;
-const bbox = {minLat:40.712, minLon:-74.006, maxLat:40.715, maxLon:-74.002};
+let lastPoint=null;
 const scaleLatLon=100000;
+
+// Bounding box with enough area to get streets
+const bbox = {minLat:40.710, minLon:-74.010, maxLat:40.720, maxLon:-74.000};
 
 let streetNodes=[], streetWays=[];
 
@@ -52,53 +54,13 @@ const game = new Phaser.Game(config);
 let graphics, player;
 
 function preload(){
-  // simple player circle
   this.textures.generate('player',{data:['111','111','111'],pixelWidth:16,pixelHeight:16});
 }
 
 function create(){
   graphics=this.add.graphics();
-  drawStreets(this);
-
   player=this.add.image(0,0,'player').setOrigin(0.5,0.5).setDepth(1000);
   this.cameras.main.startFollow(player,true,0.1,0.1);
-}
-
-// ----------------- Overpass Fetch -----------------
-async function fetchOSM(){
-  const query=`[out:json];way["highway"](${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon});out geom;`;
-  const url='https://overpass-api.de/api/interpreter?data='+encodeURIComponent(query);
-  const resp=await fetch(url);
-  const data=await resp.json();
-  streetWays=data.elements;
-  const nodesMap={};
-  streetWays.forEach(w=>{
-    w.geometry.forEach(n=>{ nodesMap[`${n.lat},${n.lon}`]=n; });
-  });
-  streetNodes=Object.values(nodesMap);
-  drawStreets(game.scene.scenes[0]);
-}
-
-// ----------------- Draw Streets -----------------
-function drawStreets(scene){
-  graphics.clear();
-  // Draw streets
-  graphics.lineStyle(3,0x222222,1);
-  streetWays.forEach(w=>{
-    for(let i=1;i<w.geometry.length;i++){
-      const p1=latLonToIso(w.geometry[i-1].lat,w.geometry[i-1].lon,scene);
-      const p2=latLonToIso(w.geometry[i].lat,w.geometry[i].lon,scene);
-      graphics.strokeLineShape(new Phaser.Geom.Line(p1.x,p1.y,p2.x,p2.y));
-    }
-  });
-
-  // Draw route trail
-  graphics.lineStyle(4,0xff0000,1);
-  for(let i=1;i<route.length;i++){
-    const p1=latLonToIso(route[i-1].lat,route[i-1].lon,scene);
-    const p2=latLonToIso(route[i].lat,route[i].lon,scene);
-    graphics.strokeLineShape(new Phaser.Geom.Line(p1.x,p1.y,p2.x,p2.y));
-  }
 }
 
 // ----------------- Helpers -----------------
@@ -120,6 +82,43 @@ function distanceMeters(lat1,lon1,lat2,lon2){
   return Math.sqrt((lat2-lat1)**2 + (lon2-lon1)**2)*111000;
 }
 
+// ----------------- Draw Streets -----------------
+function drawStreets(scene){
+  graphics.clear();
+  // Streets
+  graphics.lineStyle(3,0x222222,1);
+  streetWays.forEach(w=>{
+    for(let i=1;i<w.geometry.length;i++){
+      const p1=latLonToIso(w.geometry[i-1].lat,w.geometry[i-1].lon,scene);
+      const p2=latLonToIso(w.geometry[i].lat,w.geometry[i].lon,scene);
+      graphics.strokeLineShape(new Phaser.Geom.Line(p1.x,p1.y,p2.x,p2.y));
+    }
+  });
+  // Route trail
+  graphics.lineStyle(4,0xff0000,1);
+  for(let i=1;i<route.length;i++){
+    const p1=latLonToIso(route[i-1].lat,route[i-1].lon,scene);
+    const p2=latLonToIso(route[i].lat,route[i].lon,scene);
+    graphics.strokeLineShape(new Phaser.Geom.Line(p1.x,p1.y,p2.x,p2.y));
+  }
+}
+
+// ----------------- Fetch OSM -----------------
+async function fetchOSM(){
+  const query=`[out:json];way["highway"](${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon});out geom;`;
+  const url='https://overpass-api.de/api/interpreter?data='+encodeURIComponent(query);
+  const resp=await fetch(url);
+  const data=await resp.json();
+  streetWays=data.elements;
+  const nodesMap={};
+  streetWays.forEach(w=>{
+    w.geometry.forEach(n=>{ nodesMap[`${n.lat},${n.lon}`]=n; });
+  });
+  streetNodes=Object.values(nodesMap);
+  drawStreets(game.scene.scenes[0]);
+}
+fetchOSM();
+
 // ----------------- Geolocation -----------------
 if(navigator.geolocation){
   navigator.geolocation.watchPosition(pos=>{
@@ -129,17 +128,15 @@ if(navigator.geolocation){
       const point={lat:latitude, lon:longitude, time:timestamp};
       route.push(point);
 
-      // Update player position
       const iso=latLonToIso(latitude,longitude,game.scene.scenes[0]);
       player.setPosition(iso.x,iso.y);
 
-      // Update orientation if previous point exists
+      // Orientation
       if(lastPoint){
         const dx = longitude-lastPoint.lon;
         const dy = latitude-lastPoint.lat;
         const angle = Math.atan2(dy, dx);
         player.setRotation(angle - Math.PI/2);
-        lastAngle = angle;
       }
 
       lastPoint=point;
@@ -192,9 +189,6 @@ document.getElementById('fileInput').onchange=async e=>{
     drawStreets(game.scene.scenes[0]);
   }catch(err){alert("Error loading file");console.error(err);}
 };
-
-// ----------------- Start -----------------
-fetchOSM();
 </script>
 </body>
 </html>
