@@ -49,16 +49,19 @@
 
 <script>
 // ---------------- MAP + GPS ----------------
-const map = L.map('map').setView([0, 0], 20);
+
+// Correct OSM zoom limits
+const map = L.map('map').setView([0, 0], 19);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 22
+    maxZoom: 19    // OSM max zoom -> prevents 400 errors
 }).addTo(map);
 
 let route = [];
 let marker = null;
 let polyline = L.polyline([], { color: "red" }).addTo(map);
 
+// GPS tracking
 navigator.geolocation.watchPosition(
     pos => {
         const { latitude, longitude } = pos.coords;
@@ -69,7 +72,7 @@ navigator.geolocation.watchPosition(
 
         if (!marker) {
             marker = L.marker(point).addTo(map);
-            map.setView(point, 20);
+            map.setView(point, 19);
         } else {
             marker.setLatLng(point);
         }
@@ -107,7 +110,7 @@ document.getElementById("fileInput").onchange = async (e) => {
         const arr = JSON.parse(text);
 
         if (!Array.isArray(arr)) {
-            alert("Invalid file format");
+            alert("Invalid route file");
             return;
         }
 
@@ -117,15 +120,13 @@ document.getElementById("fileInput").onchange = async (e) => {
         if (route.length > 0) {
             const last = route[route.length - 1];
 
-            if (!marker) {
-                marker = L.marker(last).addTo(map);
-            }
+            if (!marker) marker = L.marker(last).addTo(map);
             marker.setLatLng(last);
-            map.setView(last, 20);
+            map.setView(last, 19);
         }
 
     } catch (err) {
-        alert("Error reading route file");
+        alert("Error loading route");
         console.error(err);
     }
 };
