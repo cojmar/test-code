@@ -88,12 +88,16 @@ const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 const mZoomDefault = isMobile ? 19 : 18;
 
 /* RESTORE LAST ZOOM */
-const savedZoom = Number(localStorage.getItem("mapZoom") || mZoomDefault);
-const map = L.map('map').setView([0,0], savedZoom);
-map.on("zoomend",()=>{ localStorage.setItem("mapZoom", map.getZoom()); });
+let savedZoom = Number(localStorage.getItem("mapZoom") || mZoomDefault);
+if(savedZoom>19) savedZoom=19;
+const map = L.map('map', { maxZoom: 19 }).setView([0,0], savedZoom);
+map.on("zoomend",()=>{ 
+  if(map.getZoom()>19) map.setZoom(19);
+  localStorage.setItem("mapZoom", map.getZoom()); 
+});
 
 /* TILELAYER */
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{ maxZoom:22 }).addTo(map);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{ maxZoom:19 }).addTo(map);
 map.on('tileerror',()=>{ map.eachLayer(l=>{ if(l instanceof L.TileLayer) l.redraw(); }) });
 
 /* FOLLOW TOGGLE */
