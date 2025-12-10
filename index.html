@@ -194,6 +194,28 @@ function startTracking(){
   navigator.geolocation.watchPosition(pos=>handlePosition(pos), err=>fallbackLocate(), { maximumAge:0, enableHighAccuracy:true });
 }
 
+/* IMPORT FROM URL HASH */
+function importFromHash() {
+  if(location.hash.length>1){
+    try {
+      const base64 = location.hash.slice(1);
+      const json = atob(base64);
+      const arr = JSON.parse(json);
+      if(Array.isArray(arr)){
+        route = arr.map(p=>({lat:p.lat, lon:p.lon, time:p.time||Date.now()}));
+        lastPoint = route.length?route[route.length-1]:null;
+        localStorage.setItem("gpsRoute", JSON.stringify(route));
+        const pts = route.map(p=>[p.lat,p.lon]);
+        polylineOutline.setLatLngs(pts);
+        polyline.setLatLngs(pts);
+        if(route.length){ const last=route[route.length-1]; if(!marker) marker=L.marker([last.lat,last.lon]).addTo(map); marker.setLatLng([last.lat,last.lon]); if(followEnabled()) map.setView([last.lat,last.lon]); }
+        updateStats();
+      }
+    } catch(err){ console.log("Failed to import from URL hash:", err); }
+    history.replaceState(null,null,' '); // clear hash
+  }
+}
+
 /* INIT */
 const ptsInit = route.map(p=>[p.lat,p.lon]);
 polylineOutline.setLatLngs(ptsInit);
@@ -209,17 +231,15 @@ updateStats();
 startTracking();
 window.addEventListener("load",()=>map.invalidateSize());
 
-/* EXPORT/IMPORT/CLEAR */
+/* EXPORT TO URL & CLIPBOARD */
 document.getElementById("exportBtn").onclick = ()=>{
-  const data = JSON.stringify(route,null,2);
-  const blob = new Blob([data],{type:"application/json"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download="route.txt";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  const json = JSON.stringify(route);
+  const base64 = btoa(json);
+  const url = location.origin + location.pathname + '#' + base64;
+  navigator.clipboard.writeText(url).then(()=>alert("Route URL copied to clipboard!"));
 };
 
+/* FILE IMPORT */
 document.getElementById("importBtn").onclick=()=>document.getElementById("fileInput").click();
 document.getElementById("fileInput").onchange=async e=>{
   const file=e.target.files[0]; if(!file) return;
@@ -238,7 +258,11 @@ document.getElementById("fileInput").onchange=async e=>{
   }catch(err){ alert("Error loading route"); }
 };
 
+/* CLEAR */
 document.getElementById("clearBtn").onclick=()=>{ localStorage.removeItem("gpsRoute"); location.reload(); };
+
+/* CHECK HASH ON LOAD */
+importFromHash();
 </script>
 </body>
 </html>
