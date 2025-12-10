@@ -2,12 +2,12 @@
 <html>
 <head>
 <meta charset="UTF-8" />
-<title>GPS Route Tracker with Distance & Time</title>
+<title>GPS Route Tracker Mobile</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
   #map { width: 100%; height: 100%; }
 
   #controls {
@@ -17,20 +17,21 @@
     z-index: 9999;
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    background: rgba(0,0,0,0.3);
-    padding: 8px;
-    border-radius: 5px;
+    gap: 8px;
+    background: rgba(0,0,0,0.5);
+    padding: 10px;
+    border-radius: 8px;
+    min-width: 150px;
   }
 
   button {
-    padding: 5px 10px;
-    font-size: 14px;
+    padding: 10px 14px;
+    font-size: 16px;
     border: none;
     background: #222;
     color: white;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 6px;
   }
 
   button:hover {
@@ -39,7 +40,23 @@
 
   #stats {
     color: white;
-    font-size: 14px;
+    font-size: 18px;
+    font-weight: bold;
+    text-align: center;
+  }
+
+  @media (max-width: 500px) {
+    #controls {
+      min-width: 130px;
+      padding: 8px;
+    }
+    button {
+      font-size: 14px;
+      padding: 8px 12px;
+    }
+    #stats {
+      font-size: 16px;
+    }
   }
 </style>
 </head>
@@ -66,7 +83,7 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 
 let route = [];
-let marker = L.marker([0,0]); // placeholder
+let marker = L.marker([0,0]); 
 let polyline = L.polyline([], { color: "red" }).addTo(map);
 
 let lastPoint = null;
@@ -74,9 +91,9 @@ const THRESHOLD = 0.00001; // ~1 meter
 
 const statsDiv = document.getElementById("stats");
 
-// Calculate distance in meters between two lat/lon points
+// Distance in meters
 function distanceMeters(p1, p2) {
-    const R = 6371000; // Earth radius in meters
+    const R = 6371000; 
     const dLat = (p2.lat - p1.lat) * Math.PI / 180;
     const dLon = (p2.lon - p1.lon) * Math.PI / 180;
     const lat1 = p1.lat * Math.PI / 180;
@@ -165,7 +182,6 @@ document.getElementById("fileInput").onchange = async (e) => {
             return;
         }
 
-        // Ensure each point has lat, lon, time
         route = arr.map(p => ({
             lat: p.lat,
             lon: p.lon,
