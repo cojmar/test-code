@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8" />
-<title>GPS Route Tracker with Change Detection</title>
+<title>GPS Route Tracker with Distance & Time</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
@@ -16,11 +16,15 @@
     left: 10px;
     z-index: 9999;
     display: flex;
-    gap: 10px;
+    flex-direction: column;
+    gap: 5px;
+    background: rgba(0,0,0,0.3);
+    padding: 8px;
+    border-radius: 5px;
   }
 
   button {
-    padding: 7px 12px;
+    padding: 5px 10px;
     font-size: 14px;
     border: none;
     background: #222;
@@ -32,6 +36,11 @@
   button:hover {
     background: #444;
   }
+
+  #stats {
+    color: white;
+    font-size: 14px;
+  }
 </style>
 </head>
 
@@ -41,6 +50,7 @@
     <button id="exportBtn">Export</button>
     <button id="importBtn">Import</button>
     <input type="file" id="fileInput" style="display:none" />
+    <div id="stats">Distance: 0 m | Time: 0 s</div>
 </div>
 
 <div id="map"></div>
@@ -62,11 +72,40 @@ let polyline = L.polyline([], { color: "red" }).addTo(map);
 let lastPoint = null;
 const THRESHOLD = 0.00001; // ~1 meter
 
+const statsDiv = document.getElementById("stats");
+
+// Calculate distance in meters between two lat/lon points
+function distanceMeters(p1, p2) {
+    const R = 6371000; // Earth radius in meters
+    const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+    const dLon = (p2.lon - p1.lon) * Math.PI / 180;
+    const lat1 = p1.lat * Math.PI / 180;
+    const lat2 = p2.lat * Math.PI / 180;
+
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+function updateStats() {
+    if (route.length < 2) {
+        statsDiv.textContent = "Distance: 0 m | Time: 0 s";
+        return;
+    }
+
+    let dist = 0;
+    for (let i = 1; i < route.length; i++) {
+        dist += distanceMeters(route[i-1], route[i]);
+    }
+
+    const elapsed = Math.floor((route[route.length-1].time - route[0].time)/1000);
+    statsDiv.textContent = `Distance: ${dist.toFixed(1)} m | Time: ${elapsed} s`;
+}
+
 navigator.geolocation.watchPosition(
     pos => {
         const { latitude, longitude } = pos.coords;
 
-        // Store new point only if moved enough
         if (!lastPoint ||
             Math.abs(latitude - lastPoint.lat) > THRESHOLD ||
             Math.abs(longitude - lastPoint.lon) > THRESHOLD) {
@@ -85,6 +124,8 @@ navigator.geolocation.watchPosition(
             } else {
                 marker.setLatLng([point.lat, point.lon]);
             }
+
+            updateStats();
         }
     },
     err => console.error("GPS Error:", err),
@@ -142,6 +183,8 @@ document.getElementById("fileInput").onchange = async (e) => {
             marker.setLatLng([last.lat, last.lon]);
             map.setView([last.lat, last.lon], 19);
         }
+
+        updateStats();
 
     } catch (err) {
         alert("Error loading route");
